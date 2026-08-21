@@ -4,6 +4,7 @@ Unit tests for Tool/connectors (GitHub, PostgreSQL/Prisma, Telegram) and FastMCP
 """
 
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 import sys
 import os
@@ -106,19 +107,53 @@ class TestMCPConnectors(unittest.TestCase):
         self.assertFalse(diff["is_destructive"])
 
     # --- Telegram Connector Tests ---
-    def test_telegram_send_alert(self):
-        res = self.telegram.send_alert(chat_id="@why_ai_ops", message="System health: 100%", priority="INFO")
-        self.assertEqual(res["status"], "SENT")
-        self.assertTrue(res["delivered"])
+    # Эти три теста раньше утверждали status == "SENT" против заглушки, которая
+    # возвращала константу и не делала ни одного сетевого вызова, — то есть
+    # проходили бы при полностью нерабочей доставке. После TASK-TG-01/02 коннектор
+    # fail-closed: без токена в окружении доставки нет, и тесты проверяют именно
+    # это. Подробное покрытие транспорта — в tests/test_telegram_connector.py.
 
-    def test_telegram_send_panic_notification(self):
-        res = self.telegram.send_panic_notification(exit_code=10, reason="Out-of-band operator signal")
-        self.assertEqual(res["status"], "SENT")
+    @contextmanager
+    def _no_bot_token(self):
+        """Гарантирует отсутствие токена: тесты никогда не ходят в сеть."""
+        saved = os.environ.pop("TELEGRAM_BOT_TOKEN", None)
+        try:
+            yield
+        finally:
+            if saved is not None:
+                os.environ["TELEGRAM_BOT_TOKEN"] = saved
+
+    def test_telegram_send_alert_fails_closed_without_token(self):
+        with self._no_bot_token():
+            res = self.telegram.send_alert(chat_id="@why_ai_ops", message="System health: 100%", priority="INFO")
+        self.assertFalse(res["delivered"])
+        self.assertEqual(res["status"], "FAILED")
+        self.assertEqual(res["error"], "MISSING_TOKEN")
+        self.assertEqual(res["priority"], "INFO")
+        # Диагностика обязана называть ИМЯ переменной окружения (это не секрет),
+        # проверка отсутствия ЗНАЧЕНИЯ токена — в tests/test_telegram_connector.py.
+        self.assertIn("TELEGRAM_BOT_TOKEN", res["error_detail"])
+
+    def test_telegram_send_panic_notification_fails_closed_without_token(self):
+        with self._no_bot_token():
+            res = self.telegram.send_panic_notification(exit_code=10, reason="Out-of-band operator signal")
+        self.assertFalse(res["delivered"])
         self.assertEqual(res["priority"], "CRITICAL")
+        self.assertEqual(res["error"], "MISSING_TOKEN")
 
-    def test_telegram_send_quorum_verdict(self):
-        res = self.telegram.send_quorum_verdict(diff_sha="sha256:abcd1234ef56", verdict="APPROVED")
-        self.assertEqual(res["status"], "SENT")
+    def test_telegram_send_quorum_verdict_fails_closed_without_token(self):
+        with self._no_bot_token():
+            res = self.telegram.send_quorum_verdict(diff_sha="sha256:abcd1234ef56", verdict="APPROVED")
+        self.assertFalse(res["delivered"])
+        self.assertEqual(res["error"], "MISSING_TOKEN")
+
+    def test_telegram_mcp_tool_signature_still_matches_registration(self):
+        """Tool/mcp_server.py:258 вызывает send_alert(chat_id=, message=, priority=)."""
+        import inspect
+
+        params = inspect.signature(TelegramConnector.send_alert).parameters
+        for name in ("chat_id", "message", "priority"):
+            self.assertIn(name, params)
 
     # --- FastMCP Server Integration Tests ---
     def test_fastmcp_tools_registered_and_callable(self):

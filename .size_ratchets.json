@@ -27,7 +27,7 @@
     "Supervisor/CommitGate.py": 5562,
     "Supervisor/EvolutionDaemon.py": 6883,
     "Supervisor/guard-policy-plane.sh": 2245,
-    "Supervisor/launcher.py": 6698,
+    "Supervisor/launcher.py": 6694,
     "Supervisor/miniyaml.py": 8376,
     "Supervisor/QuorumReviewer.py": 8847,
     "Supervisor/SizeRatchets.py": 6621,
@@ -99,6 +99,7 @@
     "docs/final_vision/03-roadmap.md": 10053,
     "docs/final_vision/04-todo.md": 11354,
     "docs/final_vision/05-risks.md": 12553,
-    "docs/final_vision/README.md": 6644
+    "docs/final_vision/README.md": 6644,
+    "tests/test_telegram_connector.py": 25951
   }
 }

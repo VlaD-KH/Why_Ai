@@ -41,7 +41,7 @@ def print_banner() -> None:
     print("=" * 76)
     print("   [SELF-EVO] HYBRID SOVEREIGN ORCHESTRATOR - MVP CORE (v3.0.0)")
     print("   Architecture: Ouroboros / Hierarchy v3 / Claudexor Quorum Review")
-    print("   Constitutional Invariants: 13 Principles (BIBLE.md) - Zone P/R Floor")
+    print("   Constitutional Invariants: 15 Principles (BIBLE.md) - Zone P/R Floor")
     print("=" * 76)
 
 

@@ -10,7 +10,7 @@
 *Цель:* Развертывание неизменяемого скелета Supervisor, интеграция инженерных навыков `addyosmani/agent-skills`, настройка статических барьеров безопасности и модульного UI.
 
 - [x] **1.1. Базовая топология каталогов и суверенное зонирование:** `/Supervisor` (Zone P/R) и `/Core` (Zone E).
-- [x] **1.2. Конституция и Инварианты:** 13 принципов безопасности в `/Supervisor/Constitution/BIBLE.md`.
+- [x] **1.2. Конституция и Инварианты:** 15 принципов безопасности в `/Supervisor/Constitution/BIBLE.md` (14 и 15 добавлены 2026-08-21: нулевая утечка учётных данных, изоляция исходящего сетевого доступа).
 - [x] **1.3. Детерминированный классификатор рисков в Supervisor:** `Supervisor/classify_diff.py` с каскадным $\max(\text{Risk})$ и `--self-check`.
 - [x] **1.4. Динамический оркестратор Hierarchy v3:** `Supervisor/WorkspaceOrchestrator.py` с фиксацией Windows Git CRLF (`core.autocrlf false`, `core.eol lf`, `core.quotepath false`).
 - [x] **1.5. Аппаратные храповики размера:** `Supervisor/SizeRatchets.py` по правилу `shrink-only`.

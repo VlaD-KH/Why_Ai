@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="ru" data-scheme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Why_Ai — пульт оператора</title>
+
+<!--
+  ============================================================================
+  Why_Ai · Telegram Mini App  ·  Eye/telegram_mini_app.html
+  ----------------------------------------------------------------------------
+  Назначение : внеполосный пульт оператора — статус системы, поток телеметрии
+               и рубильник /panic — на экране телефона.
+  Зона       : E (UI/telemetry). Файл НЕ имеет runtime-полномочий, НЕ читает
+               секретов и НЕ содержит ни токена бота, ни ID оператора.
+               Файл отдаётся в браузер, то есть публичен по определению.
+  Инвариант  : никогда не рапортовать об успехе операции по факту отправки
+               запроса. Кнопка /panic сообщает ФАКТИЧЕСКИЙ HTTP-результат.
+  Сборка     : отсутствует. Vanilla HTML/CSS/JS, как Eye/dashboard.html.
+               Единственный внешний скрипт — официальный SDK Telegram,
+               без него Mini App не работает.
+  ============================================================================
+
+  --------------------------- АДРЕС API (единственное место) ------------------
+  Адрес Daemon Control Plane НЕ зашит в код: при доступе через туннель
+  (cloudflared/ngrok) он меняется при каждом перезапуске туннеля.
+
+  Порядок разрешения адреса — сверху вниз, первый непустой выигрывает:
+
+    1) параметр запроса ?api=https://<host>            (разовая отладка;
+       принимается только https://, либо http:// на localhost/127.0.0.1)
+    2) content у <meta name="why-ai-api-base">          (см. строку ниже)
+    3) пусто -> тот же источник, что и сама страница    (штатный режим:
+       туннель смотрит на демона, демон отдаёт и эту страницу)
+
+  Штатный режим — вариант 3, поле content оставлено пустым. Заполнять его
+  нужно только если эта страница хостится отдельно от API.
+  Формат: "https://example.trycloudflare.com" — без завершающего слэша.
+
+  Сам URL Mini App задаётся в BotFather (/newapp или /setmenubutton), а не
+  здесь: Telegram в production принимает ТОЛЬКО HTTPS с валидным сертификатом.
+-->
+<meta name="why-ai-api-base" content="">
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+<style>
+/* ---------------------------------------------------------------------------
+   Палитра. Внутри Telegram цвета берутся из --tg-theme-* (их подставляет
+   клиент), снаружи — из резервных --fb-*, чтобы файл был отлаживаем в обычном
+   браузере. Сигнальные цвета (норма/деградация/паника) Telegram не даёт —
+   они заданы явно и переключаются вместе со схемой.
+--------------------------------------------------------------------------- */
+:root{
+  --fb-bg:#ffffff;
+  --fb-text:#0f1115;
+  --fb-hint:#6b7280;
+  --fb-link:#2481cc;
+  --fb-button:#2481cc;
+  --fb-button-text:#ffffff;
+  --fb-secondary-bg:#eff1f5;
+  --fb-section-bg:#ffffff;
+  --line:rgba(0,0,0,.10);
+
+  --ok-fg:#0e7a44;   --ok-bg:#e3f4ea;   --ok-line:rgba(14,122,68,.30);
+  --warn-fg:#8a5600; --warn-bg:#fdf0d5; --warn-line:rgba(138,86,0,.30);
+  --crit-fg:#c31f1f; --crit-bg:#fce8e8; --crit-line:rgba(195,31,31,.32);
+  --info-fg:#3f4653; --info-bg:#edeff3; --info-line:rgba(63,70,83,.20);
+}
+:root[data-scheme="dark"]{
+  --fb-bg:#17212b;
+  --fb-text:#f1f3f5;
+  --fb-hint:#98a4b0;
+  --fb-link:#62bcf9;
+  --fb-button:#4b93d1;
+  --fb-button-text:#ffffff;
+  --fb-secondary-bg:#0e1621;
+  --fb-section-bg:#1d2733;
+  --line:rgba(255,255,255,.12);
+
+  --ok-fg:#5fd995;   --ok-bg:#10301f;   --ok-line:rgba(95,217,149,.32);
+  --warn-fg:#f5c35b; --warn-bg:#33260a; --warn-line:rgba(245,195,91,.32);
+  --crit-fg:#ff7b7b; --crit-bg:#3a1518; --crit-line:rgba(255,123,123,.36);
+  --info-fg:#b7c0cc; --info-bg:#222d3a; --info-line:rgba(183,192,204,.22);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-scheme="light"]){
+    --fb-bg:#17212b;
+    --fb-text:#f1f3f5;
+    --fb-hint:#98a4b0;
+    --fb-link:#62bcf9;
+    --fb-button:#4b93d1;
+    --fb-button-text:#ffffff;
+    --fb-secondary-bg:#0e1621;
+    --fb-section-bg:#1d2733;
+    --line:rgba(255,255,255,.12);
+
+    --ok-fg:#5fd995;   --ok-bg:#10301f;   --ok-line:rgba(95,217,149,.32);
+    --warn-fg:#f5c35b; --warn-bg:#33260a; --warn-line:rgba(245,195,91,.32);
+    --crit-fg:#ff7b7b; --crit-bg:#3a1518; --crit-line:rgba(255,123,123,.36);
+    --info-fg:#b7c0cc; --info-bg:#222d3a; --info-line:rgba(183,192,204,.22);
+  }
+}
+
+/* Семантические токены: сначала тема Telegram, затем резерв. */
+:root{
+  --bg:            var(--tg-theme-bg-color,            var(--fb-bg));
+  --text:          var(--tg-theme-text-color,          var(--fb-text));
+  --hint:          var(--tg-theme-hint-color,          var(--fb-hint));
+  --link:          var(--tg-theme-link-color,          var(--fb-link));
+  --button:        var(--tg-theme-button-color,        var(--fb-button));
+  --button-text:   var(--tg-theme-button-text-color,   var(--fb-button-text));
+  --secondary-bg:  var(--tg-theme-secondary-bg-color,  var(--fb-secondary-bg));
+  --section-bg:    var(--tg-theme-section-bg-color,    var(--fb-section-bg));
+
+  --mono: ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --sans: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --r: 12px;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--secondary-bg);
+  color:var(--text);
+  font-family:var(--sans);
+  font-size:16px;
+  line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+  -webkit-text-size-adjust:100%;
+  min-height:100vh;
+  min-height:var(--tg-viewport-stable-height,100vh);
+}
+.app{
+  max-width:560px;
+  margin:0 auto;
+  padding:12px 14px calc(28px + env(safe-area-inset-bottom,0px));
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+/* ---------------------------------- шапка --------------------------------- */
+.top{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:2px 2px 0}
+.top h1{margin:0; font-size:15px; font-weight:650; letter-spacing:-.01em}
+.top .sub{margin:1px 0 0; font-size:11.5px; color:var(--hint); font-family:var(--mono)}
+
+/* индикатор связи */
+.link-chip{
+  display:inline-flex; align-items:center; gap:6px; flex:none;
+  font-family:var(--mono); font-size:11px; letter-spacing:.02em;
+  padding:6px 10px; border-radius:999px; border:1px solid transparent;
+  white-space:nowrap;
+}
+.dot{width:8px; height:8px; border-radius:50%; background:currentColor; flex:none}
+.link-chip.ok  {color:var(--ok-fg);   background:var(--ok-bg);   border-color:var(--ok-line)}
+.link-chip.warn{color:var(--warn-fg); background:var(--warn-bg); border-color:var(--warn-line)}
+.link-chip.crit{color:var(--crit-fg); background:var(--crit-bg); border-color:var(--crit-line)}
+.link-chip.ok .dot{animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@media (prefers-reduced-motion: reduce){ .link-chip.ok .dot{animation:none} }
+
+/* ------------------------------- вердикт ---------------------------------- */
+/* Главный экран: состояние системы должно читаться с телефона одним взглядом. */
+.verdict{
+  border-radius:var(--r); padding:18px 16px; border:1px solid transparent;
+  text-align:center;
+}
+.verdict .word{
+  font-size:30px; line-height:1.1; font-weight:800; letter-spacing:-.02em;
+  margin:0 0 6px; text-transform:uppercase;
+}
+.verdict .why{margin:0; font-size:13.5px; opacity:.95}
+.verdict .meta{margin:9px 0 0; font-size:11.5px; font-family:var(--mono); opacity:.8}
+.verdict.ok  {background:var(--ok-bg);   color:var(--ok-fg);   border-color:var(--ok-line)}
+.verdict.warn{background:var(--warn-bg); color:var(--warn-fg); border-color:var(--warn-line)}
+.verdict.crit{background:var(--crit-bg); color:var(--crit-fg); border-color:var(--crit-line)}
+.verdict.crit .word{letter-spacing:.04em}
+.unlatch{
+  margin-top:10px; background:none; border:1px solid currentColor; color:inherit;
+  font:inherit; font-size:12px; padding:6px 12px; border-radius:8px;
+  min-height:32px; cursor:pointer; opacity:.85;
+}
+
+/* -------------------------------- карточки -------------------------------- */
+.card{background:var(--section-bg); border:1px solid var(--line); border-radius:var(--r); padding:14px}
+.card > h2{
+  margin:0 0 10px; font-family:var(--mono); font-size:10.5px; font-weight:600;
+  letter-spacing:.1em; text-transform:uppercase; color:var(--hint);
+}
+
+/* плитки статуса */
+.tiles{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+.tile{background:var(--secondary-bg); border-radius:10px; padding:10px 11px; min-width:0}
+.tile .k{font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--hint)}
+.tile .v{font-size:17px; font-weight:650; margin-top:3px; overflow-wrap:anywhere}
+.tile .v.ok{color:var(--ok-fg)} .tile .v.warn{color:var(--warn-fg)} .tile .v.crit{color:var(--crit-fg)}
+.poll-line{margin:10px 0 0; font-size:11.5px; font-family:var(--mono); color:var(--hint); overflow-wrap:anywhere}
+
+/* ------------------------------- рубильник -------------------------------- */
+.panic{
+  width:100%; min-height:64px; border-radius:var(--r); cursor:pointer;
+  border:1px solid var(--crit-line); background:var(--crit-fg); color:#fff;
+  font-family:var(--sans); font-size:19px; font-weight:750; letter-spacing:.02em;
+  display:flex; align-items:center; justify-content:center; gap:10px;
+  -webkit-tap-highlight-color:transparent; touch-action:manipulation;
+}
+:root[data-scheme="dark"] .panic{color:#2a0b0d}
+.panic:active{filter:brightness(.9)}
+.panic[disabled]{opacity:.55; cursor:default}
+.panic-note{margin:8px 0 0; font-size:11.5px; color:var(--hint); text-align:center}
+
+/* блок фактического результата — самое важное место интерфейса */
+.result{margin-top:10px; border-radius:10px; padding:11px 12px; border:1px solid transparent; font-size:13.5px}
+.result .head{font-weight:700; margin:0 0 4px; font-size:14.5px}
+.result .body{margin:0; overflow-wrap:anywhere}
+.result .raw{
+  margin:7px 0 0; font-family:var(--mono); font-size:11px; line-height:1.5;
+  white-space:pre-wrap; overflow-wrap:anywhere; opacity:.85; max-height:8.4em; overflow:auto;
+}
+.result.idle{background:var(--info-bg); color:var(--info-fg); border-color:var(--info-line)}
+.result.ok  {background:var(--ok-bg);   color:var(--ok-fg);   border-color:var(--ok-line)}
+.result.warn{background:var(--warn-bg); color:var(--warn-fg); border-color:var(--warn-line)}
+.result.crit{background:var(--crit-bg); color:var(--crit-fg); border-color:var(--crit-line)}
+
+/* вторичные кнопки */
+.row{display:flex; gap:8px; margin-top:10px}
+.btn{
+  flex:1; min-height:48px; border-radius:10px; cursor:pointer;
+  background:var(--secondary-bg); color:var(--text); border:1px solid var(--line);
+  font-family:var(--sans); font-size:14.5px; font-weight:550;
+  -webkit-tap-highlight-color:transparent; touch-action:manipulation;
+}
+.btn:active{filter:brightness(.94)}
+.btn[disabled]{opacity:.55; cursor:default}
+
+/* ------------------------------- лента событий ---------------------------- */
+.feed{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:7px}
+.ev{display:flex; gap:9px; align-items:flex-start; background:var(--secondary-bg); border-radius:10px; padding:9px 10px}
+.ev .bar{width:3px; align-self:stretch; border-radius:2px; flex:none; background:var(--info-fg)}
+.ev.ok   .bar{background:var(--ok-fg)}
+.ev.warn .bar{background:var(--warn-fg)}
+.ev.crit .bar{background:var(--crit-fg)}
+.ev .txt{min-width:0; flex:1}
+.ev .title{font-size:14px; font-weight:600; margin:0}
+.ev.crit .title{color:var(--crit-fg)}
+.ev .desc{margin:2px 0 0; font-size:12.5px; color:var(--hint); overflow-wrap:anywhere}
+.ev .when{margin:2px 0 0; font-family:var(--mono); font-size:10.5px; color:var(--hint); opacity:.85}
+.ev .type{font-family:var(--mono); font-size:10px; color:var(--hint); opacity:.75}
+.empty{margin:0; font-size:13px; color:var(--hint)}
+
+/* --------------------------------- подвал --------------------------------- */
+details.diag{background:var(--section-bg); border:1px solid var(--line); border-radius:var(--r); padding:0}
+details.diag > summary{
+  list-style:none; cursor:pointer; padding:13px 14px;
+  font-family:var(--mono); font-size:10.5px; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--hint); min-height:44px;
+  display:flex; align-items:center;
+}
+details.diag > summary::-webkit-details-marker{display:none}
+details.diag > summary::after{content:" ▾"; margin-left:auto}
+details.diag[open] > summary::after{content:" ▴"}
+.diag-body{padding:0 14px 14px}
+.kv{display:grid; grid-template-columns:auto 1fr; gap:4px 12px; font-size:12.5px}
+.kv dt{font-family:var(--mono); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--hint); padding-top:2px}
+.kv dd{margin:0; overflow-wrap:anywhere; font-family:var(--mono); font-size:11.5px}
+.warnbox{
+  margin:10px 0 0; padding:9px 10px; border-radius:9px; font-size:12px;
+  background:var(--warn-bg); color:var(--warn-fg); border:1px solid var(--warn-line);
+}
+.foot{margin:2px 0 0; font-size:11px; color:var(--hint); text-align:center; line-height:1.5}
+</style>
+</head>
+
+<body>
+<div class="app">
+
+  <div class="top">
+    <div>
+      <h1>Why_Ai — пульт оператора</h1>
+      <p class="sub" id="scopeLine">Sovereign Control Plane</p>
+    </div>
+    <span class="link-chip warn" id="linkChip"><span class="dot"></span><span id="linkText">инициализация</span></span>
+  </div>
+
+  <!-- Главный вердикт: норма / деградация / паника -->
+  <section class="verdict warn" id="verdict" aria-live="polite">
+    <p class="word" id="verdictWord">Проверка</p>
+    <p class="why" id="verdictWhy">Устанавливается связь с Control Plane…</p>
+    <p class="meta" id="verdictMeta"></p>
+    <button class="unlatch" id="unlatchBtn" type="button" hidden>Снять отметку паники</button>
+  </section>
+
+  <!-- Рубильник -->
+  <section class="card">
+    <h2>Внеполосный останов</h2>
+    <button class="panic" id="panicBtn" type="button">СТОП · /panic</button>
+    <p class="panic-note">POST /api/panic → SupervisorLauncher.panic_stop() · exit code 10</p>
+    <div class="result idle" id="panicResult" role="status" aria-live="assertive">
+      <p class="head" id="panicHead">Останов не запрашивался</p>
+      <p class="body" id="panicBody">Результат показывается по фактическому коду ответа сервера, а не по факту отправки запроса.</p>
+      <pre class="raw" id="panicRaw" hidden></pre>
+    </div>
+    <div class="row">
+      <button class="btn" id="refreshBtn" type="button">Обновить статус</button>
+      <button class="btn" id="reconnectBtn" type="button">Переподключить поток</button>
+    </div>
+  </section>
+
+  <!-- Статус -->
+  <section class="card">
+    <h2>Статус системы</h2>
+    <div class="tiles">
+      <div class="tile"><div class="k">Супервизор</div><div class="v" id="tSupervisor">—</div></div>
+      <div class="tile"><div class="k">Процессы</div><div class="v" id="tPids">—</div></div>
+      <div class="tile"><div class="k">Конституция</div><div class="v" id="tConst">—</div></div>
+      <div class="tile"><div class="k">Демон</div><div class="v" id="tVersion">—</div></div>
+    </div>
+    <p class="poll-line" id="pollLine">GET /api/status — опроса ещё не было</p>
+  </section>
+
+  <!-- Телеметрия -->
+  <section class="card">
+    <h2>Телеметрия · SSE</h2>
+    <ul class="feed" id="feed"></ul>
+    <p class="empty" id="feedEmpty">Событий пока нет. Поток открыт — ждём.</p>
+  </section>
+
+  <!-- Диагностика -->
+  <details class="diag">
+    <summary>Диагностика</summary>
+    <div class="diag-body">
+      <dl class="kv">
+        <dt>API</dt>            <dd id="dApi">—</dd>
+        <dt>Источник</dt>       <dd id="dApiSource">—</dd>
+        <dt>SSE</dt>            <dd id="dSse">—</dd>
+        <dt>Попыток</dt>        <dd id="dAttempts">0</dd>
+        <dt>Событий</dt>        <dd id="dEvents">0</dd>
+        <dt>Telegram</dt>       <dd id="dTg">—</dd>
+        <dt>Тема</dt>           <dd id="dTheme">—</dd>
+        <dt>Рабочий корень</dt> <dd id="dRoot">—</dd>
+        <dt>Время сервера</dt>  <dd id="dServerTime">—</dd>
+      </dl>
+      <div class="warnbox" id="staticNote" hidden></div>
+      <div class="warnbox" id="mixedNote" hidden></div>
+    </div>
+  </details>
+
+  <p class="foot">
+    Зона E · только интерфейс. Секретов не содержит и не запрашивает.<br>
+    Адрес API задаётся в &lt;meta name="why-ai-api-base"&gt;, URL приложения — в BotFather.
+  </p>
+</div>
+
+<script>
+"use strict";
+/* ===========================================================================
+   1. Разрешение адреса API — единственная точка конфигурации.
+   =========================================================================== */
+
+function readMetaBase() {
+  var el = document.querySelector('meta[name="why-ai-api-base"]');
+  return el ? String(el.getAttribute("content") || "").trim() : "";
+}
+
+/* Разрешён только https, либо http на localhost (отладка). Абсолютный адрес,
+   пришедший из ?api=, — это то, куда уйдут запросы оператора, поэтому
+   произвольная схема или подозрительный ввод отбрасываются, а фактически
+   использованный адрес всегда виден в блоке «Диагностика». */
+function sanitizeBase(raw) {
+  if (!raw) return "";
+  var u;
+  try { u = new URL(raw, window.location.href); } catch (e) { return ""; }
+  var localHost = (u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "[::1]");
+  if (u.protocol === "https:" || (u.protocol === "http:" && localHost)) {
+    return (u.origin + u.pathname).replace(/\/+$/, "");
+  }
+  return "";
+}
+
+var API_BASE = "";
+var API_SOURCE = "";
+(function resolveApiBase() {
+  var fromQuery = "";
+  try { fromQuery = new URLSearchParams(window.location.search).get("api") || ""; } catch (e) { fromQuery = ""; }
+
+  var q = sanitizeBase(fromQuery);
+  if (q) { API_BASE = q; API_SOURCE = "параметр ?api="; return; }
+
+  var m = sanitizeBase(readMetaBase());
+  if (m) { API_BASE = m; API_SOURCE = "meta why-ai-api-base"; return; }
+
+  API_BASE = "";
+  API_SOURCE = "тот же источник, что и страница";
+})();
+
+function api(path) { return API_BASE + path; }
+
+/* Смешанное содержимое: страница по https не сможет обратиться к http-API —
+   браузер заблокирует запрос молча. Предупреждаем заранее. */
+var MIXED_CONTENT = (window.location.protocol === "https:" && API_BASE.indexOf("http://") === 0);
+
+/* ===========================================================================
+   2. Telegram WebApp: тема, разворот, диалоги. Всё под guard — файл обязан
+      оставаться работоспособным в обычном браузере при отладке.
+   =========================================================================== */
+
+var tg = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+
+function tgSafe(fn) { try { return fn(); } catch (e) { return undefined; } }
+
+function atLeast(v) {
+  if (!tg || typeof tg.isVersionAtLeast !== "function") return false;
+  return tgSafe(function () { return tg.isVersionAtLeast(v); }) === true;
+}
+
+/* SDK грузится и вне Telegram (например, когда файл открыт в браузере при
+   отладке). В этом случае он отдаёт заглушки: colorScheme "light",
+   themeParams {}, platform "unknown". Доверять такому colorScheme нельзя —
+   иначе тёмный телефон получит светлый интерфейс. Признак настоящего
+   клиента: непустые themeParams либо известная платформа. */
+function inRealTelegram() {
+  if (!tg) return false;
+  var hasTheme = !!(tg.themeParams && Object.keys(tg.themeParams).length > 0);
+  var realPlatform = !!(tg.platform && tg.platform !== "unknown");
+  return hasTheme || realPlatform;
+}
+
+function prefersDark() {
+  return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+}
+
+/* Клиенты Telegram новых версий сами подставляют --tg-theme-*; старые — нет.
+   Переносим themeParams в CSS-переменные руками, чтобы покрыть оба случая. */
+function applyTelegramTheme() {
+  var real = inRealTelegram();
+  var scheme;
+  if (real) {
+    scheme = (tg.colorScheme === "dark") ? "dark" : "light";
+  } else {
+    scheme = prefersDark() ? "dark" : "light";
+  }
+  document.documentElement.setAttribute("data-scheme", scheme);
+
+  var applied = 0;
+  if (tg && tg.themeParams) {
+    var p = tg.themeParams;
+    for (var key in p) {
+      if (!Object.prototype.hasOwnProperty.call(p, key)) continue;
+      var val = p[key];
+      if (typeof val !== "string" || !val) continue;
+      document.documentElement.style.setProperty("--tg-theme-" + key.replace(/_/g, "-"), val);
+      applied++;
+    }
+  }
+  setText("dTheme", scheme + " · themeParams: " + applied +
+    (real ? " · из клиента Telegram" : " · резервная палитра"));
+}
+
+function initTelegram() {
+  if (!tg) {
+    setText("dTg", "SDK не загружен — автономный режим");
+    return;
+  }
+  tgSafe(function () { tg.ready(); });
+  tgSafe(function () { tg.expand(); });
+  if (atLeast("6.1")) {
+    tgSafe(function () { tg.setHeaderColor("secondary_bg_color"); });
+  }
+  if (atLeast("7.7")) {
+    tgSafe(function () { tg.disableVerticalSwipes(); });
+  }
+  tgSafe(function () { tg.onEvent("themeChanged", applyTelegramTheme); });
+  setText("dTg", inRealTelegram()
+    ? "v" + (tg.version || "?") + " · " + (tg.platform || "?")
+    : "SDK загружен, клиент не обнаружен — автономный режим");
+}
+
+/* Вне Telegram схему задаёт система, и она может меняться на ходу. */
+function watchSystemScheme() {
+  if (!window.matchMedia) return;
+  var mq = window.matchMedia("(prefers-color-scheme: dark)");
+  var onChange = function () { if (!inRealTelegram()) applyTelegramTheme(); };
+  if (typeof mq.addEventListener === "function") {
+    tgSafe(function () { mq.addEventListener("change", onChange); });
+  } else if (typeof mq.addListener === "function") {
+    tgSafe(function () { mq.addListener(onChange); });
+  }
+}
+
+/* Подтверждение и уведомление: нативные диалоги Telegram, иначе — браузерные.
+   showConfirm доступен с 6.2; в старых клиентах падать нельзя. */
+function askConfirm(message, cb) {
+  if (tg && typeof tg.showConfirm === "function" && atLeast("6.2")) {
+    var ok = tgSafe(function () { tg.showConfirm(message, function (confirmed) { cb(!!confirmed); }); return true; });
+    if (ok) return;
+  }
+  cb(window.confirm(message));
+}
+
+function haptic(kind) {
+  if (!tg || !tg.HapticFeedback || !atLeast("6.1")) return;
+  tgSafe(function () {
+    if (kind === "warning" || kind === "error" || kind === "success") {
+      tg.HapticFeedback.notificationOccurred(kind);
+    } else {
+      tg.HapticFeedback.impactOccurred(kind || "medium");
+    }
+  });
+}
+
+/* ===========================================================================
+   3. Мелкие утилиты
+   =========================================================================== */
+
+function $(id) { return document.getElementById(id); }
+function setText(id, text) { var el = $(id); if (el) el.textContent = text; }
+
+function pad2(n) { return (n < 10 ? "0" : "") + n; }
+
+function clockOf(d) {
+  return pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds());
+}
+
+function ago(ms) {
+  var s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 5) return "только что";
+  if (s < 60) return s + " с назад";
+  var m = Math.round(s / 60);
+  if (m < 60) return m + " мин назад";
+  var h = Math.round(m / 60);
+  return h + " ч назад";
+}
+
+function clip(text, max) {
+  var s = String(text == null ? "" : text);
+  return s.length > max ? s.slice(0, max) + "…" : s;
+}
+
+function compact(obj, max) {
+  try { return clip(JSON.stringify(obj), max || 140); }
+  catch (e) { return "[объект не сериализуется]"; }
+}
+
+/* ===========================================================================
+   4. Состояние и сводный вердикт
+   =========================================================================== */
+
+var state = {
+  sse: "init",            // init | online | retry | down
+  retryInSec: 0,
+  attempts: 0,
+  lastEventAt: 0,
+  statusOk: null,         // null — ещё не опрашивали
+  statusHttp: null,
+  statusError: "",
+  lastPollAt: 0,
+  supervisor: null,
+  panicLatched: false,
+  panicAt: 0,
+  panicConfirmedBySse: false,
+  eventCount: 0
+};
+
+/* Три различимых состояния: норма / деградация / паника.
+   Паника «залипает»: оператор должен увидеть её, даже вернувшись позже. */
+function renderVerdict() {
+  var box = $("verdict"), word = $("verdictWord"), why = $("verdictWhy"), meta = $("verdictMeta");
+  var unlatch = $("unlatchBtn");
+  if (!box) return;
+
+  var cls, w, reason, metaText = "";
+
+  if (state.panicLatched) {
+    cls = "crit";
+    w = "Паника";
+    reason = state.panicConfirmedBySse
+      ? "Аварийный останов подтверждён событием panic_stop из потока телеметрии."
+      : "Зафиксирован аварийный останов. Подтверждения из потока телеметрии пока нет.";
+    metaText = "отметка поставлена " + clockOf(new Date(state.panicAt));
+    if (unlatch) unlatch.hidden = false;
+  } else {
+    if (unlatch) unlatch.hidden = true;
+    var problems = [];
+    if (state.sse !== "online") {
+      problems.push(state.sse === "retry"
+        ? "поток телеметрии переподключается"
+        : "поток телеметрии не установлен");
+    }
+    if (state.statusOk === false) {
+      problems.push("статус недоступен" + (state.statusHttp ? " (HTTP " + state.statusHttp + ")" : ""));
+    }
+    if (state.statusOk === null) problems.push("статус ещё не получен");
+    if (state.supervisor && state.supervisor.status && state.supervisor.status !== "RUNNING") {
+      problems.push("супервизор в состоянии " + state.supervisor.status);
+    }
+    if (state.supervisor && state.supervisor.constitution_present === false) {
+      problems.push("BIBLE.md не найден");
+    }
+
+    if (problems.length === 0) {
+      cls = "ok";
+      w = "Порядок";
+      reason = "Control Plane отвечает, поток телеметрии в эфире, супервизор работает.";
+      metaText = state.lastPollAt ? "статус получен " + ago(state.lastPollAt) : "";
+    } else {
+      cls = "warn";
+      w = "Деградация";
+      reason = problems.join(" · ");
+      metaText = state.lastPollAt ? "последний успешный опрос " + ago(state.lastPollAt) : "успешных опросов ещё не было";
+    }
+  }
+
+  box.className = "verdict " + cls;
+  word.textContent = w;
+  why.textContent = reason;
+  meta.textContent = metaText;
+}
+
+function renderLink() {
+  var chip = $("linkChip");
+  if (!chip) return;
+  var cls = "warn", text = "…";
+  if (state.sse === "online") { cls = "ok"; text = "в эфире"; }
+  else if (state.sse === "retry") { cls = "warn"; text = "переподключение " + state.retryInSec + " с"; }
+  else if (state.sse === "down") { cls = "crit"; text = "обрыв"; }
+  else { cls = "warn"; text = "подключение"; }
+  chip.className = "link-chip " + cls;
+  setText("linkText", text);
+  setText("dSse", state.sse + (state.sse === "retry" ? " (" + state.retryInSec + " с)" : ""));
+  setText("dAttempts", String(state.attempts));
+}
+
+function render() { renderLink(); renderVerdict(); }
+
+/* ===========================================================================
+   5. SSE: подписка на GET /api/events/stream с экспоненциальным backoff.
+
+      EventSource умеет переподключаться сам, но при HTTP-ошибке или отказе
+      CORS он закрывается насовсем (readyState === CLOSED). Поэтому цикл
+      переподключения ведём сами: он предсказуем и его видно оператору.
+   =========================================================================== */
+
+/* Типы, которые реально вещает Core/server.py:broadcast_event().
+   EventSource не поддерживает подписку по маске — перечисляем явно. */
+var EVENT_TYPES = [
+  "connected",
+  "panic_stop",
+  "worktrees_pruned",
+  "evolution_cycle",
+  "mode_changed",
+  "db_synced",
+  "dvpn_connected",
+  "dvpn_tier_switched",
+  "dvpn_fallback"
+];
+
+var EVENT_META = {
+  connected:          { label: "Канал телеметрии открыт", sev: "ok" },
+  panic_stop:         { label: "ПАНИКА · аварийный останов", sev: "crit" },
+  worktrees_pruned:   { label: "Песочницы очищены", sev: "info" },
+  evolution_cycle:    { label: "Цикл самоэволюции", sev: "info" },
+  mode_changed:       { label: "Смена топологического режима", sev: "warn" },
+  db_synced:          { label: "Синхронизация БД", sev: "info" },
+  dvpn_connected:     { label: "dVPN · узел подключён", sev: "ok" },
+  dvpn_tier_switched: { label: "dVPN · смена тарифа", sev: "info" },
+  dvpn_fallback:      { label: "dVPN · аварийный fallback", sev: "warn" }
+};
+
+function describeEvent(type, data) {
+  if (!data || typeof data !== "object") return "";
+  switch (type) {
+    case "connected":
+      return String(data.message || "поток установлен");
+    case "panic_stop":
+      return "exit_code " + (data.exit_code != null ? data.exit_code : "?") +
+             " · " + clip(data.reason || "причина не указана", 90);
+    case "worktrees_pruned":
+      return "удалено рабочих деревьев: " + (data.pruned_count != null ? data.pruned_count : "?");
+    case "mode_changed":
+      return "режим: " + clip(data.mode || "?", 40);
+    case "evolution_cycle":
+      return "статус: " + clip(data.status || compact(data, 90), 90);
+    case "db_synced":
+      return "failures/ledger: " + compact({ f: data.failures, l: data.ledger }, 90);
+    case "dvpn_connected":
+    case "dvpn_tier_switched":
+    case "dvpn_fallback":
+      return clip([data.status, data.tier, data.country, data.node_id, data.reason]
+        .filter(function (x) { return x; }).join(" · ") || compact(data, 90), 110);
+    default:
+      return compact(data, 110);
+  }
+}
+
+var feedItems = [];
+
+function pushEvent(type, rawText) {
+  var payload = null;
+  try { payload = JSON.parse(rawText); } catch (e) { payload = null; }
+
+  /* broadcast_event() оборачивает полезную нагрузку в {type,timestamp,data};
+     стартовое сообщение "connected" приходит без обёртки. */
+  var data = (payload && typeof payload === "object" && payload.data && typeof payload.data === "object")
+    ? payload.data : payload;
+  var stamp = (payload && payload.timestamp) ? payload.timestamp : null;
+
+  var meta = EVENT_META[type] || { label: type, sev: "info" };
+  feedItems.unshift({
+    type: type,
+    label: meta.label,
+    sev: meta.sev,
+    desc: describeEvent(type, data),
+    at: Date.now(),
+    stamp: stamp
+  });
+  if (feedItems.length > 50) feedItems.length = 50;
+
+  state.eventCount++;
+  state.lastEventAt = Date.now();
+  setText("dEvents", String(state.eventCount));
+
+  if (type === "panic_stop") {
+    state.panicLatched = true;
+    state.panicConfirmedBySse = true;
+    if (!state.panicAt) state.panicAt = Date.now();
+    haptic("error");
+    /* Событие panic_stop — независимое подтверждение того, что останов
+       действительно произошёл, откуда бы его ни инициировали. */
+    if (panicPhase === "sent-ok") {
+      setResult("ok", "Останов подтверждён", "HTTP-ответ и событие panic_stop из потока телеметрии совпали.", null);
+    }
+  }
+  if (type === "mode_changed" || type === "evolution_cycle" || type === "worktrees_pruned") {
+    pollStatus();
+  }
+
+  renderFeed();
+  render();
+}
+
+function renderFeed() {
+  var list = $("feed"), empty = $("feedEmpty");
+  if (!list) return;
+  if (feedItems.length === 0) {
+    list.innerHTML = "";
+    if (empty) empty.hidden = false;
+    return;
+  }
+  if (empty) empty.hidden = true;
+
+  list.innerHTML = "";
+  for (var i = 0; i < feedItems.length; i++) {
+    var it = feedItems[i];
+    var li = document.createElement("li");
+    li.className = "ev " + it.sev;
+
+    var bar = document.createElement("span");
+    bar.className = "bar";
+    li.appendChild(bar);
+
+    var txt = document.createElement("div");
+    txt.className = "txt";
+
+    var title = document.createElement("p");
+    title.className = "title";
+    title.textContent = it.label;
+    txt.appendChild(title);
+
+    if (it.desc) {
+      var desc = document.createElement("p");
+      desc.className = "desc";
+      desc.textContent = it.desc;
+      txt.appendChild(desc);
+    }
+
+    var when = document.createElement("p");
+    when.className = "when";
+    when.textContent = clockOf(new Date(it.at)) + " · " + ago(it.at);
+    txt.appendChild(when);
+
+    var t = document.createElement("span");
+    t.className = "type";
+    t.textContent = it.type;
+    txt.appendChild(t);
+
+    li.appendChild(txt);
+    list.appendChild(li);
+  }
+}
+
+var es = null;
+var retryTimer = null;
+var tickTimer = null;
+var backoffStep = 0;
+
+var BACKOFF = [1000, 2000, 4000, 8000, 15000, 30000];
+
+function clearRetry() {
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+  if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+}
+
+function connectSSE() {
+  clearRetry();
+  if (es) { try { es.close(); } catch (e) {} es = null; }
+
+  state.attempts++;
+  state.sse = "init";
+  render();
+
+  var url = api("/api/events/stream");
+  try {
+    es = new EventSource(url);
+  } catch (e) {
+    state.sse = "down";
+    render();
+    scheduleReconnect();
+    return;
+  }
+
+  es.onopen = function () {
+    backoffStep = 0;
+    state.sse = "online";
+    render();
+  };
+
+  EVENT_TYPES.forEach(function (type) {
+    es.addEventListener(type, function (ev) {
+      if (state.sse !== "online") { state.sse = "online"; backoffStep = 0; }
+      pushEvent(type, ev.data);
+    });
+  });
+
+  /* Безымянные события (на случай, если сервер начнёт слать data: без event:) */
+  es.onmessage = function (ev) {
+    if (state.sse !== "online") { state.sse = "online"; backoffStep = 0; }
+    pushEvent("message", ev.data);
+  };
+
+  es.onerror = function () {
+    /* Браузер мог уйти в собственный retry (CONNECTING) — но собственный цикл
+       предсказуемее и его видно оператору, поэтому закрываем и ведём сами. */
+    try { es.close(); } catch (e) {}
+    es = null;
+    state.sse = "retry";
+    render();
+    scheduleReconnect();
+  };
+}
+
+function scheduleReconnect() {
+  clearRetry();
+  var base = BACKOFF[Math.min(backoffStep, BACKOFF.length - 1)];
+  backoffStep++;
+  var delay = base + Math.floor(Math.random() * 400); /* джиттер */
+  state.sse = "retry";
+  state.retryInSec = Math.ceil(delay / 1000);
+  render();
+
+  tickTimer = setInterval(function () {
+    state.retryInSec = Math.max(0, state.retryInSec - 1);
+    renderLink();
+  }, 1000);
+
+  retryTimer = setTimeout(function () {
+    clearRetry();
+    connectSSE();
+  }, delay);
+}
+
+/* ===========================================================================
+   6. HTTP c таймаутом. Молчаливое «зависание» запроса не должно выглядеть
+      как успех — поэтому таймаут явный и его код обрабатывается отдельно.
+   =========================================================================== */
+
+function fetchWithTimeout(url, options, ms) {
+  var opts = options || {};
+  var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+  if (ctrl) opts.signal = ctrl.signal;
+
+  var timedOut = false;
+  var timer = setTimeout(function () {
+    timedOut = true;
+    if (ctrl) ctrl.abort();
+  }, ms);
+
+  return fetch(url, opts).then(function (res) {
+    clearTimeout(timer);
+    return res;
+  }, function (err) {
+    clearTimeout(timer);
+    if (timedOut) {
+      var e = new Error("истёк таймаут " + Math.round(ms / 1000) + " с");
+      e.name = "TimeoutError";
+      throw e;
+    }
+    throw err;
+  });
+}
+
+/* ===========================================================================
+   7. GET /api/status — второй, независимый от SSE признак живости.
+      Поток телеметрии молчит штатно (сервер шлёт только ": ping"), поэтому
+      «связь есть» подтверждается именно опросом статуса.
+   =========================================================================== */
+
+var STATUS_PERIOD_MS = 15000;
+var statusTimer = null;
+var pollInFlight = false;
+
+function pollStatus() {
+  if (pollInFlight) return Promise.resolve();
+  pollInFlight = true;
+  var btn = $("refreshBtn");
+  if (btn) btn.disabled = true;
+
+  return fetchWithTimeout(api("/api/status"), { method: "GET", cache: "no-store" }, 10000)
+    .then(function (res) {
+      state.statusHttp = res.status;
+      if (!res.ok) {
+        state.statusOk = false;
+        state.statusError = "HTTP " + res.status + " " + (res.statusText || "");
+        setText("pollLine", "GET /api/status → ОТКАЗ: " + state.statusError + " · " + clockOf(new Date()));
+        render();
+        return;
+      }
+      return res.json().then(function (data) {
+        state.statusOk = true;
+        state.statusError = "";
+        state.lastPollAt = Date.now();
+        applyStatus(data);
+        setText("pollLine", "GET /api/status → HTTP " + res.status + " · " + clockOf(new Date()));
+        render();
+      }, function () {
+        state.statusOk = false;
+        state.statusError = "HTTP " + res.status + ", но тело ответа — не JSON";
+        setText("pollLine", "GET /api/status → " + state.statusError);
+        render();
+      });
+    })
+    .catch(function (err) {
+      state.statusOk = false;
+      state.statusHttp = null;
+      state.statusError = (err && err.message) ? err.message : "запрос не выполнен";
+      setText("pollLine", "GET /api/status → запрос не дошёл: " + state.statusError);
+      render();
+    })
+    .then(function () {
+      pollInFlight = false;
+      if (btn) btn.disabled = false;
+    });
+}
+
+function applyStatus(data) {
+  var sup = (data && data.supervisor) ? data.supervisor : {};
+  state.supervisor = sup;
+
+  var supEl = $("tSupervisor");
+  if (supEl) {
+    supEl.textContent = sup.status || "неизвестно";
+    supEl.className = "v " + (sup.status === "RUNNING" ? "ok" : "warn");
+  }
+
+  setText("tPids", sup.active_pids_count != null ? String(sup.active_pids_count) : "—");
+
+  var constEl = $("tConst");
+  if (constEl) {
+    var present = sup.constitution_present === true;
+    constEl.textContent = present ? "на месте" : "НЕТ";
+    constEl.className = "v " + (present ? "ok" : "crit");
+  }
+
+  setText("tVersion", data && data.version ? String(data.version) : "—");
+  setText("dRoot", (data && data.workspace_root) ? data.workspace_root : "—");
+  setText("dServerTime", (data && data.time) ? data.time : "—");
+  setText("scopeLine", (data && data.daemon) ? clip(data.daemon, 46) : "Sovereign Control Plane");
+
+  /* Поля verified_tests / active_invariants в Core/server.py — статические
+     строки, а не результат прогона. Показывать их как живое измерение
+     значило бы рапортовать об успехе, которого никто не проверял. */
+  var note = $("staticNote");
+  if (note && data && (data.verified_tests || data.active_invariants)) {
+    note.hidden = false;
+    note.textContent = "Демон декларирует: тесты «" + clip(data.verified_tests || "—", 24) +
+      "», инварианты «" + clip(data.active_invariants || "—", 24) +
+      "». Это константы в Core/server.py, а не результат прогона — доверять им как измерению нельзя.";
+  }
+}
+
+/* ===========================================================================
+   8. Кнопка /panic.
+
+      Требование, ради которого этот файл переписан с нуля: результат
+      определяется КОДОМ ОТВЕТА, а не фактом отправки. Исходная реализация
+      печатала «система остановлена» сразу после fetch(), из-за чего при 404
+      оператор уходил, считая систему остановленной, а она работала.
+
+      Разбираемые исходы:
+        сеть/таймаут  -> ОТКАЗ, состояние системы НЕИЗВЕСТНО
+        не-2xx        -> ОТКАЗ, система НЕ остановлена (код показывается)
+        2xx + чужое тело -> НЕЯСНО, показать сырой ответ
+        2xx + PANIC_STOPPED -> выполнено, ждём подтверждения из SSE
+   =========================================================================== */
+
+var panicPhase = "idle";
+
+function setResult(cls, head, body, raw) {
+  var box = $("panicResult");
+  if (box) box.className = "result " + cls;
+  setText("panicHead", head);
+  setText("panicBody", body);
+  var pre = $("panicRaw");
+  if (pre) {
+    if (raw) { pre.hidden = false; pre.textContent = clip(raw, 700); }
+    else { pre.hidden = true; pre.textContent = ""; }
+  }
+}
+
+function doPanic() {
+  var btn = $("panicBtn");
+  panicPhase = "sending";
+  if (btn) { btn.disabled = true; btn.textContent = "ОТПРАВКА…"; }
+  setResult("warn", "Запрос отправлен", "Ответ ещё не получен. Останов НЕ подтверждён.", null);
+
+  /* Без заголовков и без тела: простой POST не вызывает preflight, а тело
+     обработчик Core/server.py всё равно не читает. */
+  fetchWithTimeout(api("/api/panic"), { method: "POST", cache: "no-store" }, 12000)
+    .then(function (res) {
+      return res.text().then(function (text) { return { res: res, text: text }; },
+                             function () { return { res: res, text: "" }; });
+    })
+    .then(function (out) {
+      var res = out.res, text = out.text;
+
+      if (!res.ok) {
+        panicPhase = "failed";
+        haptic("error");
+        setResult("crit",
+          "ОТКАЗ · HTTP " + res.status + (res.statusText ? " " + res.statusText : ""),
+          "Сервер отклонил запрос. Система НЕ остановлена. Останавливайте вручную: " +
+          "python Supervisor/launcher.py --panic-stop",
+          text || null);
+        return;
+      }
+
+      var data = null;
+      try { data = JSON.parse(text); } catch (e) { data = null; }
+
+      if (!data || typeof data !== "object" || data.error || data.status !== "PANIC_STOPPED") {
+        panicPhase = "unclear";
+        haptic("warning");
+        setResult("warn",
+          "НЕЯСНО · HTTP " + res.status,
+          "Код ответа успешный, но тело не подтверждает останов (ожидалось status=\"PANIC_STOPPED\"). " +
+          "Считать систему остановленной нельзя — проверьте вручную.",
+          text || "[пустое тело ответа]");
+        return;
+      }
+
+      panicPhase = "sent-ok";
+      state.panicLatched = true;
+      if (!state.panicAt) state.panicAt = Date.now();
+      haptic("success");
+      /* Событие panic_stop могло прийти по SSE раньше, чем разрешился fetch —
+         тогда подтверждение уже есть и обещать его в будущем времени неверно. */
+      setResult("ok",
+        "ОСТАНОВ ВЫПОЛНЕН · HTTP " + res.status,
+        "Ответ: status=" + data.status + ", exit_code=" +
+        (data.exit_code != null ? data.exit_code : "?") +
+        (state.panicConfirmedBySse
+          ? ". Подтверждено событием panic_stop из потока телеметрии."
+          : ". Ожидается подтверждающее событие panic_stop из потока телеметрии."),
+        null);
+      render();
+    })
+    .catch(function (err) {
+      panicPhase = "failed";
+      haptic("error");
+      var why = (err && err.name === "TimeoutError")
+        ? "Ответ не пришёл: " + err.message + "."
+        : "Запрос не дошёл до сервера" + (err && err.message ? " (" + err.message + ")" : "") + ".";
+      setResult("crit",
+        "ОТКАЗ · ответа нет",
+        why + " Состояние системы НЕИЗВЕСТНО, останов НЕ подтверждён. " +
+        "Проверьте туннель и адрес API в блоке «Диагностика».",
+        null);
+    })
+    .then(function () {
+      if (btn) { btn.disabled = false; btn.textContent = "СТОП · /panic"; }
+      render();
+    });
+}
+
+function onPanicClick() {
+  haptic("medium");
+  askConfirm(
+    "Остановить систему?\n\nБудут принудительно завершены все процессы под надзором супервизора (exit code 10). Действие внеполосное и необратимое.",
+    function (confirmed) {
+      if (!confirmed) {
+        setResult("idle", "Останов отменён", "Подтверждение не получено — запрос не отправлялся.", null);
+        return;
+      }
+      doPanic();
+    }
+  );
+}
+
+/* ===========================================================================
+   9. Запуск
+   =========================================================================== */
+
+function init() {
+  applyTelegramTheme();
+  initTelegram();
+  watchSystemScheme();
+
+  setText("dApi", API_BASE || (window.location.origin + " (страница)"));
+  setText("dApiSource", API_SOURCE);
+
+  var mixed = $("mixedNote");
+  if (mixed && MIXED_CONTENT) {
+    mixed.hidden = false;
+    mixed.textContent = "Страница открыта по https, а API указан по http — браузер заблокирует такие запросы " +
+      "(mixed content). Укажите https-адрес туннеля в meta why-ai-api-base.";
+  }
+
+  $("panicBtn").addEventListener("click", onPanicClick);
+  $("refreshBtn").addEventListener("click", function () { pollStatus(); });
+  $("reconnectBtn").addEventListener("click", function () {
+    backoffStep = 0;
+    connectSSE();
+  });
+  $("unlatchBtn").addEventListener("click", function () {
+    state.panicLatched = false;
+    state.panicConfirmedBySse = false;
+    state.panicAt = 0;
+    render();
+    pollStatus();
+  });
+
+  render();
+  connectSSE();
+  pollStatus();
+  statusTimer = setInterval(pollStatus, STATUS_PERIOD_MS);
+
+  /* Относительное время в ленте и в вердикте не должно устаревать на экране. */
+  setInterval(function () { renderFeed(); renderVerdict(); }, 10000);
+
+  /* Возврат из фона: соединение могло умереть незаметно. */
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") {
+      pollStatus();
+      if (state.sse !== "online") { backoffStep = 0; connectSSE(); }
+    }
+  });
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", init);
+} else {
+  init();
+}
+</script>
+</body>
+</html>

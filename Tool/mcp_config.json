@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      },
+      "description": "FastMCP GitHub connector for issues, branches, and draft pull requests"
+    },
+    "postgres": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres", "${DATABASE_URL}"],
+      "env": {},
+      "description": "FastMCP PostgreSQL connector for typed database querying and schema migrations"
+    },
+    "slack": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-slack"],
+      "env": {
+        "SLACK_BOT_TOKEN": "${SLACK_BOT_TOKEN}"
+      },
+      "description": "FastMCP Slack connector for emergency /panic and require_human notifications"
+    },
+    "filesystem_sandbox": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./Project"],
+      "env": {},
+      "description": "FastMCP sandboxed filesystem gateway restricted strictly to external project worktree"
+    }
+  }
+}

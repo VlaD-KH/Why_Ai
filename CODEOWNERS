@@ -1,0 +1,46 @@
+# CODEOWNERS — generated as a draft by ai-loop/control-plane-init, owned by a human.
+#
+# CODEOWNERS without branch protection is a comment, not enforcement. After
+# committing this file, turn on for the default branch:
+#   - require a pull request before merging
+#   - require review from Code Owners
+#   - restrict who can push directly
+#   - do NOT grant merge rights to any bot or automation account
+#   - make "ai-loop enforcement" a required status check
+#
+# The catch-all on the first line matters more than any specific rule below it:
+# without it, a path nobody thought of has no owner and merges unreviewed.
+#
+# Regenerated 2026-08-21: the previous version of this file described a
+# different (workspace-root) layout — /bin/, /settings/, /context/,
+# /MANIFEST.sha256 — none of which exist under Why_Ai/. Rewritten to match
+# the zones actually derived in .ai-loop/policy/protected_paths.yaml.
+
+# ---- catch-all: every path has an owner ------------------------------------
+*                       @vladhrapko
+
+# ---- Zone R: correctness core (see protected_paths.yaml for rationale) -----
+/Supervisor/            @vladhrapko
+/Core/                  @vladhrapko
+/Tool/connectors/       @vladhrapko
+
+# ---- Zone P: the policy plane (must be a human, never a bot) ---------------
+/.ai-loop/policy/       @vladhrapko
+/.ai-loop/bin/          @vladhrapko
+/.ai-loop/ledger.jsonl  @vladhrapko
+/CODEOWNERS             @vladhrapko
+/.github/               @vladhrapko
+/.gitattributes         @vladhrapko
+/.gitignore             @vladhrapko
+/.claude/               @vladhrapko
+
+# ---- Zone I: infrastructure and dependencies --------------------------------
+/why_ai_config.yaml     @vladhrapko
+/run_mvp.py             @vladhrapko
+/run.ps1                @vladhrapko
+/run.bat                @vladhrapko
+/Tool/mcp_server.py     @vladhrapko
+/Tool/mcp_config.json   @vladhrapko
+
+# ---- Zone T / Zone E ------------------------------------------------------
+# Lighter ownership is fine here, but "no owner" is not — the catch-all covers it.

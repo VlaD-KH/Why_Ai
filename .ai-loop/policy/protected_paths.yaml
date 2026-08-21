@@ -1,0 +1,167 @@
+# ai-loop control plane — zone boundaries (Why_Ai)
+#
+# This file answers ONE question: which paths may an autonomous agent change?
+# It does not answer "how risky is the change" — that is risk_classification.yaml.
+#
+# Filled in by the control-plane-init skill from the ACTUAL repository tree
+# (git ls-files was unavailable — Why_Ai is untracked inside the parent _Ai
+# repo at draft time — so this was derived from a filesystem walk instead),
+# then reviewed and committed by a human. The loop must never author or edit
+# it: an agent that can rewrite its own constraints has no constraints.
+#
+# Matching rules (enforced by .ai-loop/bin/classify_diff.py):
+#   "dir/"        prefix match on a directory
+#   "path/file"   exact file, or that path as a directory prefix
+#   "glob/*.ext"  fnmatch glob
+# When a path matches several zones, the MOST PROTECTED zone wins (R > P > I > T > E).
+# When a path matches NO zone, it is CRITICAL. New files are guilty until listed.
+
+version: "1.0"
+generated_by: "ai-loop/control-plane-init"
+generated_at: "2026-08-21T03:33:39Z"
+reviewed_by: "TODO: human name — the loop may not fill this in"
+reviewed_at: "TODO: ISO-8601 timestamp"
+baseline_commit: "TODO: commit hash of the commit that introduced this file"
+
+enforcement:
+  diff_is_authoritative: true
+  mixed_diff_policy: MAX_RISK_WINS
+  default_risk_for_unmatched: CRITICAL
+  fail_closed: true
+  # Paths excluded from classification INPUT — either ai-loop's own bookkeeping
+  # (classifying it would mean recording a decision changes the decision), or
+  # this project's own runtime/generated state that changes on every run and
+  # carries no source intent to review.
+  exclusions:
+    - ".ai-loop/ledger.jsonl"
+    - ".ai-loop/runs/"
+    - ".ai-loop/artifacts/"
+    - ".ai-loop/archive/"
+    - ".ai_workspace_state.json"
+    - ".supervisor_pids.json"
+    - ".size_ratchets.json"
+    - "antigravity_debug.log"
+    - "Core/failures.jsonl"
+
+zones:
+  R:
+    label: "Regulated / correctness core — where a wrong change causes real-world harm"
+    rationale: >
+      Why_Ai is a self-evolving multi-agent system: Supervisor/ is its safety
+      floor (out-of-band /panic exit code 10, QuorumReviewer veto, CommitGate,
+      shrink-only SizeRatchets, WorktreeSandbox isolation) and
+      Supervisor/Constitution/BIBLE.md is its constitution. Core/ is the
+      daemon control-plane, memory manager and self-evolution driver the
+      Supervisor exists to constrain — a silent bug there can produce
+      uncontrolled agent behaviour, which is the specific real-world harm
+      this project is designed against. Core/dvpn/ additionally controls a
+      VPN kill-switch and fail-safe fallback: a silent bug there is a
+      privacy/security leak for a real user. README.md labels Core/ "Zone E"
+      in its own (pre-ai-loop) Hierarchy v3 vocabulary, meaning "the part
+      that changes over developer time" — that is a different question from
+      "safe for an autonomous agent to auto-merge," which is what this R
+      classification answers. Flagged for explicit human review; loosen only
+      with evidence (e.g. a track record from tests/) that specific Core
+      submodules are safe to move to I.
+    autonomous_mutation: false
+    human_approval_required: true
+    paths:
+      - "Supervisor/"
+      - "Supervisor/Constitution/BIBLE.md"
+      - "Core/"
+      - "Tool/connectors/"
+      # Tool/connectors/ executes real side effects against external systems
+      # (GitHub draft PRs, PostgreSQL queries, Telegram sends, dVPN tier/
+      # fallback control) — the same real-world-harm bar as Core/dvpn/.
+
+  P:
+    label: "Policy plane — the mechanism that constrains the agent"
+    rationale: >
+      Universal across projects. If the loop can edit these, every other
+      zone is decorative: it can simply delete the rule that stops it.
+      .claude/ and .gitignore are included because they set the permission
+      floor and decide what the classifier can see, respectively — both are
+      policy-plane changes even though neither lives under .ai-loop/.
+    autonomous_mutation: false
+    human_approval_required: true
+    paths:
+      - ".ai-loop/policy/"
+      - ".ai-loop/bin/"
+      - ".ai-loop/ledger.jsonl"
+      - "CODEOWNERS"
+      - ".github/"
+      - ".gitattributes"
+      - ".gitignore"
+      - ".claude/"
+
+  I:
+    label: "Infrastructure and dependencies"
+    rationale: >
+      Entry points and configuration that decide what code runs and how, at
+      launch time rather than inside a request. Why_Ai has no lockfile
+      (stdlib-only at draft time); if one is added later it belongs here too.
+    autonomous_mutation: false
+    human_approval_required: true
+    paths:
+      - "why_ai_config.yaml"
+      - "run_mvp.py"
+      - "run.ps1"
+      - "run.bat"
+      - "Tool/mcp_server.py"
+      - "Tool/mcp_config.json"
+      - "*.lock"
+      - "requirements*.txt"
+      - "pyproject.toml"
+
+  T:
+    label: "Tests"
+    rationale: >
+      Editable, but never in the same change as the code they check — that
+      is how a red test becomes green without the bug being fixed.
+      classify_diff.py escalates a diff that touches T and non-T together.
+    autonomous_mutation: true
+    human_approval_required: false
+    paths:
+      - "tests/"
+
+  E:
+    label: "Evolvable surface — explicit allowlist only"
+    rationale: >
+      The only zone the loop may change on its own. UI/telemetry and docs
+      carry no runtime authority of their own. Tool/skills/ is listed here
+      physically but carries a risk_classification.yaml matrix override to
+      HIGH: skill manifests are prompt-like — changing them changes
+      downstream agent behaviour without touching code, the exact case the
+      template warns about.
+    autonomous_mutation: true
+    human_approval_required: false
+    paths:
+      - "Eye/"
+      - "docs/"
+      - "Tool/skills/"
+      - "README.md"
+      - "roadmap.md"
+      - "todo.md"
+      - "function_list.md"
+      - "dashboard.html"
+      - "worktrees/"
+      # worktrees/ is empty at draft time (ephemeral git-worktree sandboxes);
+      # zoned rather than excluded so a stray file left there is reviewable,
+      # not silently invisible to the classifier.
+
+# Paths deliberately left unzoned, with the reason. Everything here is
+# CRITICAL by default; this section exists so a reviewer can tell "not yet
+# decided" from "decided to leave protected".
+unzoned_notes:
+  - path: "Core/identity.md"
+    reason: >
+      Covered by the Core/ R-zone prefix already, called out separately
+      because the pre-ai-loop protected_paths.yaml explicitly named it as
+      quorum-required — confirms R is the right call, not a gap.
+  - path: "Core/scratchpad.md"
+    reason: >
+      Covered by Core/ (R). Named as scratch in-tree, but nothing in the
+      repo marks it git-ignored or excluded, so it stays at the same
+      protection level as the rest of Core/ rather than being carved out —
+      a human should decide if this should move to .git/info/exclude
+      instead (see init-project-mode.sh's own reasoning for agent scratch).

@@ -1,0 +1,138 @@
+# ai-loop — control plane enforcement
+#
+# Installed into the target repo at .github/workflows/ai-loop-enforcement.yml by
+# the control-plane-init skill.
+#
+# This is the barrier that does not run inside the agent's session. Hooks can be
+# disabled, a prompt can be talked around, a local script can be skipped — a
+# required status check on a protected branch cannot. Everything else in ai-loop
+# is there to make the right thing easy; this is what makes the wrong thing fail.
+#
+# It runs the same classifier the loop runs locally, from `.ai-loop/bin/`, which
+# lives in zone P and therefore cannot be edited in the same pull request it is
+# judging without that pull request becoming CRITICAL.
+
+name: ai-loop enforcement
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  classify:
+    name: classify diff and gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the pull request head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify the control plane is present and self-consistent
+        run: |
+          set -euo pipefail
+          test -f .ai-loop/bin/classify_diff.py \
+            || { echo "::error::.ai-loop/bin/classify_diff.py is missing — the control plane is not installed"; exit 1; }
+          test -f .ai-loop/policy/protected_paths.yaml \
+            || { echo "::error::.ai-loop/policy/protected_paths.yaml is missing"; exit 1; }
+          python3 .ai-loop/bin/classify_diff.py --self-check
+
+      - name: Refuse a pull request that edits the control plane it is judged by
+        run: |
+          set -euo pipefail
+          BASE="origin/${{ github.event.pull_request.base.ref }}"
+          if git diff --name-only "$BASE...HEAD" | grep -Eq '^\.ai-loop/(policy|bin)/|^CODEOWNERS$|^\.github/'; then
+            echo "::warning::this pull request changes the policy plane"
+            echo "policy_plane_touched=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Classify the actual diff
+        id: classify
+        run: |
+          set +e
+          BASE="origin/${{ github.event.pull_request.base.ref }}"
+          python3 .ai-loop/bin/classify_diff.py \
+            --range "$BASE...HEAD" \
+            --phase CI > classification.json
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          cat classification.json
+          {
+            echo 'result<<CLASSIFICATION'
+            cat classification.json
+            echo 'CLASSIFICATION'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish the verdict
+        run: |
+          set -euo pipefail
+          RISK=$(python3 -c "import json;print(json.load(open('classification.json')).get('risk','CRITICAL'))")
+          DECISION=$(python3 -c "import json;print(json.load(open('classification.json')).get('decision','require_human'))")
+          {
+            echo "### ai-loop classification"
+            echo
+            echo "| field | value |"
+            echo "|---|---|"
+            echo "| risk | \`$RISK\` |"
+            echo "| decision | \`$DECISION\` |"
+            echo
+            echo '```json'
+            cat classification.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$DECISION" != "allow" ]; then
+            echo "::error::risk $RISK requires a named human approval before merge"
+            exit 1
+          fi
+
+      # Protects the ledger's evidentiary value: a rewritten history of what was
+      # approved is worse than no history, because it still looks authoritative.
+      - name: Verify the ledger hash chain
+        if: hashFiles('.ai-loop/ledger.jsonl') != ''
+        run: python3 .ai-loop/bin/ledger.py verify
+
+  # A second, independent check. Deliberately separate from `classify` so that a
+  # change breaking the classifier cannot also silence the alarm about it.
+  forbidden-diff-canary:
+    name: forbidden diff still rejected
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: A path in no zone must classify CRITICAL
+        run: |
+          set -euo pipefail
+          OUT=$(python3 .ai-loop/bin/classify_diff.py \
+                  --paths "ai-loop-canary/definitely-not-in-any-zone.txt" --json)
+          echo "$OUT"
+          echo "$OUT" | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          assert d['risk']=='CRITICAL', f'fail-closed broken: got {d[\"risk\"]}'
+          assert d['decision']=='require_human', 'gate broken'
+          print('fail-closed behaviour confirmed')
+          "
+      - name: A policy-plane path must classify CRITICAL
+        run: |
+          set -euo pipefail
+          OUT=$(python3 .ai-loop/bin/classify_diff.py \
+                  --paths ".ai-loop/policy/protected_paths.yaml" --json)
+          echo "$OUT"
+          echo "$OUT" | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          assert d['risk']=='CRITICAL', f'policy plane not protected: got {d[\"risk\"]}'
+          print('policy plane protection confirmed')
+          "

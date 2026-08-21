@@ -1,0 +1,63 @@
+# Why_Ai System Configuration Manifest (v1.1.0-Gold)
+# Architecture: Ouroboros / Hierarchy v3 / Why_Ai Multi-Harness Engine
+
+system:
+  project_name: "Why_Ai"
+  version: "1.1.0-gold"
+  active_mode: "prod_evo" # Modes: [self_evo, prod_evo, manual_override]
+
+# Модульная архитектура (Feature Flags)
+modules:
+  living_identity:
+    enabled: true
+    identity_file: "Core/identity.md"
+    scratchpad_file: "Core/scratchpad.md"
+    context_fit_pin: true
+
+  background_consciousness:
+    enabled: false # SIGTERM: фоновая рефлексия ядра отключена в режиме prod_evo
+    tick_interval_seconds: 300
+    source_analysis:
+      - "failures.jsonl"
+      - "ledger.jsonl"
+    max_parallel_proposals: 1
+    idempotency_gate:
+      enabled: true
+      require_failure_binding: true
+      shrink_only_ratchet: true
+
+  swarm_visualizer:
+    enabled: true
+    stream_protocol: "SSE"
+    endpoint: "/api/events/stream"
+    refresh_rate_ms: 1000
+    lifecycle_cleanup_on_close: true
+
+# Мультимодельная оркестрация (Why_Ai Multi-Harness Engine)
+llm_orchestration:
+  fallback_strategy: "quota_aware_rotate_or_fail_closed"
+  cross_model_review: true
+
+  # Внутренняя 3-уровневая система градаций моделей
+  model_capability_classes:
+    - class_id: "class_1_executor"
+      capability_type: "local_specialized_code"
+      provider_type: "local_endpoint"
+      endpoint: "http://127.0.0.1:11434/v1"
+      role: "executor"
+      priority: 1
+
+    - class_id: "class_2_architect"
+      capability_type: "frontier_high_reasoning"
+      provider_type: "api_direct"
+      endpoint: "https://api.internal/v1"
+      role: "architect"
+      priority: 2
+      quota_limit_reset: "daily"
+
+    - class_id: "class_3_arbitrator"
+      capability_type: "independent_consensus"
+      provider_type: "oauth_gateway"
+      endpoint: "https://gateway.internal/v1"
+      role: "reviewer"
+      priority: 3

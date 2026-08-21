@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+.supervisor_pids.json
+antigravity_debug.log
+worktrees/*
+!worktrees/.gitkeep
+.claude/worktrees/
+*.egg-info/
+.eggs/
+dist/
+build/
+*.log
+.env
+.env.local

@@ -1,0 +1,2408 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ai-loop — режим /Project</title>
+<style>
+:root{
+  --paper:#f5f3ef; --ink:#17191c; --ink-2:#4a4f57; --ink-3:#7a828c;
+  --rail:#14161a; --rail-ink:#c9ced6; --rail-dim:#6e7681;
+  --line:#dcd8d0; --card:#fffefb;
+  --accent:#b4400f; --accent-soft:#fbeee7;
+  --ok:#1f6f4a; --ok-soft:#e6f2ea;
+  --warn:#8a6100; --warn-soft:#fbf1da;
+  --crit:#9d1c1c; --crit-soft:#fbe9e9;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:ui-sans-serif,system-ui,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper); color:var(--ink); font-family:var(--sans);
+  font-size:15px; line-height:1.6; -webkit-font-smoothing:antialiased;
+}
+a{color:var(--accent)}
+
+/* ---------- layout ---------- */
+.wrap{display:grid; grid-template-columns:236px minmax(0,1fr); min-height:100vh}
+.rail{
+  background:var(--rail); color:var(--rail-ink); padding:22px 0 40px;
+  position:sticky; top:0; height:100vh; overflow-y:auto;
+}
+.brand{padding:0 20px 18px; border-bottom:1px solid #262a30; margin-bottom:14px}
+.brand h1{font-size:15px; margin:0 0 6px; letter-spacing:.2px; color:#fff; font-weight:600}
+.brand .mode{
+  display:inline-block; font-family:var(--mono); font-size:11px; letter-spacing:.06em;
+  background:var(--accent); color:#fff; padding:2px 7px;
+}
+.brand p{margin:9px 0 0; font-size:11.5px; color:var(--rail-dim); line-height:1.5}
+.rail nav{display:flex; flex-direction:column}
+.rail a{
+  color:var(--rail-ink); text-decoration:none; padding:7px 20px; font-size:13.5px;
+  border-left:2px solid transparent;
+}
+.rail a:hover{background:#1c1f25; color:#fff}
+.rail a.on{border-left-color:var(--accent); color:#fff; background:#1c1f25}
+.rail .grp{
+  font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--rail-dim); padding:16px 20px 5px;
+}
+main{padding:34px 40px 90px; max-width:960px}
+section{margin-bottom:52px; scroll-margin-top:20px}
+h2{
+  font-size:12px; font-family:var(--mono); letter-spacing:.11em; text-transform:uppercase;
+  color:var(--accent); margin:0 0 6px; font-weight:600;
+}
+h3{font-size:21px; margin:0 0 14px; letter-spacing:-.015em; font-weight:600}
+h4{font-size:15px; margin:26px 0 8px; font-weight:600}
+p{margin:0 0 13px; color:var(--ink-2); max-width:70ch}
+p strong,li strong{color:var(--ink)}
+ul,ol{margin:0 0 13px; padding-left:20px; color:var(--ink-2); max-width:70ch}
+li{margin-bottom:6px}
+code{font-family:var(--mono); font-size:.88em; background:#e9e5dd; padding:1px 5px}
+.lead{font-size:16.5px; color:var(--ink-2); max-width:66ch}
+
+/* ---------- cards ---------- */
+.card{background:var(--card); border:1px solid var(--line); padding:20px 22px; margin-bottom:16px}
+.card.tight{padding:15px 18px}
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+
+/* ---------- code ---------- */
+.code{position:relative; background:#14161a; margin:0 0 14px}
+.code pre{
+  margin:0; padding:15px 54px 15px 17px; overflow-x:auto;
+  font-family:var(--mono); font-size:12.7px; line-height:1.65; color:#dfe3e8;
+}
+.code .cm{color:#7d8590}
+.code .hi{color:#f0a868}
+.code .st{color:#8fce9b}
+.copy{
+  position:absolute; top:9px; right:9px; background:#262a30; color:#c9ced6;
+  border:1px solid #363b43; font-family:var(--mono); font-size:10.5px;
+  padding:4px 9px; cursor:pointer; letter-spacing:.04em;
+}
+.copy:hover{background:#31363e; color:#fff}
+.copy.done{background:var(--ok); border-color:var(--ok); color:#fff}
+
+/* ---------- topology ---------- */
+.tabs{display:flex; gap:0; margin-bottom:0; border-bottom:1px solid var(--line)}
+.tab{
+  background:none; border:none; border-bottom:2px solid transparent; cursor:pointer;
+  font-family:var(--sans); font-size:13.5px; color:var(--ink-3); padding:10px 16px;
+  margin-bottom:-1px; font-weight:500;
+}
+.tab.on{color:var(--ink); border-bottom-color:var(--accent)}
+.tab:hover{color:var(--ink)}
+.tree{
+  font-family:var(--mono); font-size:12.8px; line-height:1.85; white-space:pre;
+  overflow-x:auto; margin:0; color:var(--ink-2);
+}
+.tree .r0{color:var(--ink); font-weight:600}
+.tree .r1{color:var(--accent); font-weight:600}
+.tree .r2{color:var(--ok)}
+.tree .r3{color:var(--ink-3)}
+.tree .note{color:var(--ink-3)}
+.pill{
+  display:inline-block; font-family:var(--mono); font-size:10.5px; padding:2px 7px;
+  letter-spacing:.04em; vertical-align:1px;
+}
+.pill.p0{background:#e5e2db; color:var(--ink-2)}
+.pill.p1{background:var(--accent-soft); color:var(--accent)}
+.pill.p2{background:var(--ok-soft); color:var(--ok)}
+
+/* ---------- table ---------- */
+table{border-collapse:collapse; width:100%; font-size:13.5px; margin-bottom:14px}
+th,td{text-align:left; padding:9px 11px; border-bottom:1px solid var(--line); vertical-align:top}
+th{
+  font-family:var(--mono); font-size:10.5px; letter-spacing:.07em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:600; border-bottom:1px solid #c8c3b9;
+}
+td{color:var(--ink-2)}
+td.k{color:var(--ink); font-weight:500}
+tr:last-child td{border-bottom:none}
+
+/* ---------- steps ---------- */
+.step{display:grid; grid-template-columns:34px 1fr; gap:16px; margin-bottom:26px}
+.num{
+  width:28px; height:28px; background:var(--rail); color:#fff; font-family:var(--mono);
+  font-size:13px; display:flex; align-items:center; justify-content:center; font-weight:600;
+}
+.step h4{margin:2px 0 8px}
+.step.done .num{background:var(--ok)}
+
+/* ---------- callouts ---------- */
+.note-box{border-left:3px solid var(--ink-3); background:#efece6; padding:13px 16px; margin:0 0 14px}
+.note-box.warn{border-left-color:var(--warn); background:var(--warn-soft)}
+.note-box.crit{border-left-color:var(--crit); background:var(--crit-soft)}
+.note-box.ok{border-left-color:var(--ok); background:var(--ok-soft)}
+.note-box p{margin:0; font-size:13.7px; color:var(--ink-2)}
+.note-box p+p{margin-top:8px}
+.note-box .lbl{
+  font-family:var(--mono); font-size:10px; letter-spacing:.09em; text-transform:uppercase;
+  display:block; margin-bottom:5px; color:var(--ink-3); font-weight:600;
+}
+.note-box.warn .lbl{color:var(--warn)}
+.note-box.crit .lbl{color:var(--crit)}
+.note-box.ok .lbl{color:var(--ok)}
+
+/* ---------- chain demo ---------- */
+.demo{background:var(--card); border:1px solid var(--line); padding:18px 20px}
+.demo label{
+  display:block; font-family:var(--mono); font-size:10.5px; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--ink-3); margin-bottom:6px; font-weight:600;
+}
+.demo select,.demo input{
+  font-family:var(--mono); font-size:13px; padding:8px 10px; border:1px solid #c8c3b9;
+  background:#fff; color:var(--ink); width:100%;
+}
+.layers{margin-top:16px}
+.layer{
+  display:grid; grid-template-columns:minmax(0,190px) minmax(0,1fr) 110px; gap:14px;
+  align-items:center;
+  padding:9px 12px; border:1px solid var(--line); margin-bottom:6px; background:#fbfaf7;
+  font-family:var(--mono); font-size:12.3px;
+}
+.layer>span{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+@media(max-width:760px){
+  .layer{grid-template-columns:1fr 90px; gap:6px 10px}
+  .layer .lzone{grid-column:1/-1}
+}
+.layer.governs{background:#fff}
+.layer.wins{border-color:var(--accent); border-width:2px; padding:8px 11px}
+.layer.skip{opacity:.42}
+.layer .lname{color:var(--ink); font-weight:600}
+.layer .lzone{color:var(--ink-3)}
+.risk{
+  font-family:var(--mono); font-size:11px; padding:2px 8px; letter-spacing:.04em;
+  text-align:center; font-weight:600;
+}
+.risk.LOW{background:var(--ok-soft); color:var(--ok)}
+.risk.MEDIUM{background:var(--warn-soft); color:var(--warn)}
+.risk.HIGH{background:#fae5d8; color:var(--accent)}
+.risk.CRITICAL{background:var(--crit-soft); color:var(--crit)}
+.risk.none{background:#eceae4; color:var(--ink-3)}
+.verdict{margin-top:14px; padding:13px 15px; border:1px solid var(--line); background:#fbfaf7}
+.verdict .vl{font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
+.verdict .vv{font-size:15px; margin-top:5px; color:var(--ink)}
+.verdict .vw{font-size:13px; color:var(--ink-2); margin-top:7px}
+
+/* ---------- checklist ---------- */
+.check{display:flex; gap:11px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--line)}
+.check:last-child{border-bottom:none}
+.check input{margin:4px 0 0; width:15px; height:15px; accent-color:var(--accent); cursor:pointer; flex-shrink:0}
+.check label{cursor:pointer; font-size:14px; color:var(--ink-2)}
+.check label b{color:var(--ink); font-weight:600}
+.check.ticked label{color:var(--ink-3); text-decoration:line-through}
+.bar{height:3px; background:var(--line); margin:6px 0 18px}
+.bar i{display:block; height:100%; background:var(--ok); width:0; transition:width .25s}
+
+.kicker{font-family:var(--mono); font-size:11px; letter-spacing:.07em; color:var(--ink-3); margin-bottom:20px}
+hr{border:none; border-top:1px solid var(--line); margin:34px 0}
+.foot{font-size:12.5px; color:var(--ink-3); border-top:1px solid var(--line); padding-top:18px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<aside class="rail">
+  <div class="brand">
+    <h1>ai-loop</h1>
+    <span class="mode">/Project</span>
+    <p>Работа над внешним модулем.<br>Приоритет 100% у проекта.</p>
+  </div>
+  <nav id="nav">
+    <span class="grp">🚀 Статус & Управление</span>
+    <a href="#live-roadmap-board" class="on" style="color:#f0a868; font-weight:bold;">🧭 Живой Статус & Карта SDLC</a>
+    <span class="grp">Модель</span>
+    <a href="#model">Две топологии</a>
+    <a href="#ranks">Ранги и права</a>
+    <a href="#chain">Цепочка policy</a>
+    <a href="#standing">Постоянные правила</a>
+    <span class="grp">Запуск</span>
+    <a href="#start">5 шагов</a>
+    <a href="#prompts">Промпты</a>
+    <a href="#verify">Проверка контура</a>
+    <span class="grp">Справка</span>
+    <a href="#changed">Что изменено</a>
+    <a href="#trouble">Ошибки</a>
+    <a href="#files">Файлы бандла</a>
+  </nav>
+</aside>
+
+<main>
+
+<!-- ============ INTERACTIVE LIVE ROADMAP & ARCHITECTURE DECK ============ -->
+<section id="live-roadmap-board" style="background:#14161a; color:#dfe3e8; padding:26px; border-radius:14px; margin-bottom:44px; border:1px solid #262a30; box-shadow:0 12px 32px rgba(0,0,0,0.5);">
+  
+  <!-- Верхняя строка статуса и переключателей -->
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; margin-bottom:20px; border-bottom:1px solid #262a30; padding-bottom:18px;">
+    <div>
+      <div style="display:flex; items-center; gap:8px; margin-bottom:4px;">
+        <span style="background:rgba(240,168,104,0.15); color:#f0a868; font-family:var(--mono); font-size:10px; padding:2px 7px; border-radius:4px; font-weight:bold; text-transform:uppercase;">Self-Evo Framework v6.105.1</span>
+        <span style="background:rgba(31,111,74,0.25); color:#8fce9b; font-family:var(--mono); font-size:10px; padding:2px 7px; border-radius:4px; font-weight:bold; border:1px solid rgba(31,111,74,0.4);">● Supervisor Active</span>
+      </div>
+      <h2 style="color:#fff; font-size:22px; margin:0; font-weight:700; letter-spacing:-0.02em;">
+        Интерактивная Карта Развития & SDLC Монитор
+      </h2>
+    </div>
+
+    <!-- Режимы Hierarchy v3 и /PANIC -->
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <div style="background:#1c1f25; padding:3px; border-radius:8px; border:1px solid #363b43; display:flex; gap:4px;">
+        <button id="btnProjMode" onclick="setHierarchyMode('project')" style="background:#2563eb; color:#fff; border:none; padding:5px 10px; border-radius:6px; font-size:11px; font-family:var(--mono); font-weight:bold; cursor:pointer;">
+          [prod_evo] Project ⊃ agent
+        </button>
+        <button id="btnAgentMode" onclick="setHierarchyMode('agent')" style="background:transparent; color:#7d8590; border:none; padding:5px 10px; border-radius:6px; font-size:11px; font-family:var(--mono); font-weight:bold; cursor:pointer;">
+          [self_evo] Agent ⊃ Project
+        </button>
+      </div>
+
+      <button onclick="triggerPanicStop()" style="background:#9d1c1c; hover:background:#b91c1c; color:#fff; border:1px solid #ff4d4d; font-family:var(--mono); font-size:11px; font-weight:bold; padding:7px 14px; border-radius:8px; cursor:pointer; display:flex; align-items:center; gap:6px;">
+        <span>🚨</span> /PANIC STOP
+      </button>
+    </div>
+  </div>
+
+  <!-- Блок оповещения о завершении Фазы 2 -->
+  <div style="background:linear-gradient(90deg, rgba(16,185,129,0.15) 0%, rgba(37,99,235,0.15) 100%); border:1px solid rgba(16,185,129,0.4); border-radius:10px; padding:14px 18px; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+    <div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:16px;">🏆</span>
+        <strong style="color:#fff; font-size:13.5px;">Фазы 1 & 2: Worktree Isolation & Multi-Model Quorum — Успешно Завершены (100%)</strong>
+      </div>
+      <p style="margin:4px 0 0; font-size:12px; color:#a0a6b0; max-width:650px;">
+        Изолированные Git Worktrees, мультимодельный арбитраж Claudexor с правом вето (Angle Diversity), двухэтапная проверка SHA-256 и 26/26 доказательных тестов верифицированы.
+      </p>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <span style="background:rgba(16,185,129,0.25); color:#34d399; font-family:var(--mono); font-size:11px; padding:6px 12px; border-radius:6px; border:1px solid #10b981; font-weight:bold;">
+        ✓ 26/26 Tests PASS
+      </span>
+      <span style="background:rgba(37,99,235,0.25); color:#60a5fa; font-family:var(--mono); font-size:11px; padding:6px 12px; border-radius:6px; border:1px solid #2563eb; font-weight:bold;">
+        ● Quorum Armed
+      </span>
+    </div>
+  </div>
+
+  <!-- Вкладки интерактивного модуля -->
+  <div style="display:flex; gap:6px; border-bottom:1px solid #262a30; margin-bottom:20px; padding-bottom:2px; overflow-x:auto;">
+    <button class="deck-tab active" onclick="switchDeckTab('canvas', this)" style="background:#1c1f25; color:#fff; border:1px solid #363b43; border-bottom:none; padding:8px 16px; border-radius:8px 8px 0 0; font-size:12px; font-family:var(--mono); font-weight:bold; cursor:pointer;">
+      🗺️ Архитектурная Топология (Signal Canvas)
+    </button>
+    <button class="deck-tab" onclick="switchDeckTab('roadmap', this)" style="background:transparent; color:#7d8590; border:1px solid transparent; padding:8px 16px; border-radius:8px 8px 0 0; font-size:12px; font-family:var(--mono); font-weight:bold; cursor:pointer;">
+      📊 Дорожная Карта (Roadmap & Milestones)
+    </button>
+    <button class="deck-tab" onclick="switchDeckTab('todo', this)" style="background:transparent; color:#7d8590; border:1px solid transparent; padding:8px 16px; border-radius:8px 8px 0 0; font-size:12px; font-family:var(--mono); font-weight:bold; cursor:pointer;">
+      ✅ Живой Чек-лист (Live TODO Matrix)
+    </button>
+    <button class="deck-tab" onclick="switchDeckTab('travel', this)" style="background:transparent; color:#f0a868; border:1px solid transparent; padding:8px 16px; border-radius:8px 8px 0 0; font-size:12px; font-family:var(--mono); font-weight:bold; cursor:pointer;">
+      🕰️ Путешествие по Версиям & Веткам (Time Travel)
+    </button>
+    <button class="deck-tab" onclick="switchDeckTab('questions', this)" style="background:transparent; color:#38bdf8; border:1px solid transparent; padding:8px 16px; border-radius:8px 8px 0 0; font-size:12px; font-family:var(--mono); font-weight:bold; cursor:pointer;">
+      💡 Обоснования & Side Questions (Q&A Matrix)
+    </button>
+    <button class="deck-tab" onclick="switchDeckTab('swarm', this)" style="background:transparent; color:#34d399; border:1px solid transparent; padding:8px 16px; border-radius:8px 8px 0 0; font-size:12px; font-family:var(--mono); font-weight:bold; cursor:pointer;">
+      🐝 Рой Субагентов (Swarm Task-Tree & Live State)
+    </button>
+    <button class="deck-tab" onclick="switchDeckTab('relised', this)" style="background:transparent; color:#7d8590; border:1px solid transparent; padding:8px 16px; border-radius:8px 8px 0 0; font-size:12px; font-family:var(--mono); font-weight:bold; cursor:pointer;">
+      🛠️ Инспектор relised_later (Будущие модули)
+    </button>
+  </div>
+
+  <!-- ==================== TAB 1: АРХИТЕКТУРНАЯ ТОПОЛОГИЯ ==================== -->
+  <div id="deck-canvas" class="deck-pane">
+    <div style="display:grid; grid-template-columns:1.5fr 1fr; gap:20px;">
+      
+      <!-- Сетка узлов архитектуры -->
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        
+        <!-- Слой 1: Immutable Supervisor Layer (P/R) -->
+        <div style="background:#181b22; border:1px solid #2563eb; border-radius:10px; padding:14px;">
+          <div style="font-family:var(--mono); font-size:10.5px; text-transform:uppercase; color:#60a5fa; margin-bottom:10px; font-weight:bold; display:flex; align-items:center; gap:6px;">
+            <span>🛡️</span> Immutable Layer (Zone P / R — Неизменяемый пол)
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div class="arch-node" onclick="inspectNode('supervisor')" onmouseenter="inspectNode('supervisor')" style="background:#11141a; border:1px solid #3b82f6; padding:10px; border-radius:8px; cursor:pointer;">
+              <strong style="color:#93c5fd; font-size:12px; display:block;">Supervisor [launcher.py]</strong>
+              <span style="font-size:10.5px; color:#7d8590;">Менеджер процессов & /panic</span>
+            </div>
+            <div class="arch-node" onclick="inspectNode('bible_auditor')" onmouseenter="inspectNode('bible_auditor')" style="background:#11141a; border:1px solid #3b82f6; padding:10px; border-radius:8px; cursor:pointer;">
+              <strong style="color:#93c5fd; font-size:12px; display:block;">BIBLE & MAX Risk [classify_diff]</strong>
+              <span style="font-size:10.5px; color:#7d8590;">13 Инвариантов & Fail-Closed</span>
+            </div>
+            <div class="arch-node" onclick="inspectNode('orchestrator')" onmouseenter="inspectNode('orchestrator')" style="background:#11141a; border:1px solid #3b82f6; padding:10px; border-radius:8px; cursor:pointer;">
+              <strong style="color:#93c5fd; font-size:12px; display:block;">Hierarchy v3 [Orchestrator]</strong>
+              <span style="font-size:10.5px; color:#7d8590;">Инверсия рангов & Git Windows</span>
+            </div>
+            <div class="arch-node" onclick="inspectNode('evolution_daemon')" onmouseenter="inspectNode('evolution_daemon')" style="background:#11141a; border:1px solid #9333ea; padding:10px; border-radius:8px; cursor:pointer;">
+              <strong style="color:#c084fc; font-size:12px; display:block;">EvolutionDaemon.py</strong>
+              <span style="font-size:10.5px; color:#7d8590;">Рекурсивный фоновый цикл</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Слой 2: Mutable Core Runtime (E) -->
+        <div style="background:#181b22; border:1px solid #f97316; border-radius:10px; padding:14px;">
+          <div style="font-family:var(--mono); font-size:10.5px; text-transform:uppercase; color:#fb923c; margin-bottom:10px; font-weight:bold; display:flex; align-items:center; gap:6px;">
+            <span>🧠</span> Mutable Runtime (Zone E — Изменяемый контур задач)
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div class="arch-node" onclick="inspectNode('context_fit')" onmouseenter="inspectNode('context_fit')" style="background:#11141a; border:1px solid #f97316; padding:10px; border-radius:8px; cursor:pointer;">
+              <strong style="color:#fdba74; font-size:12px; display:block;">ContextFit Memory Graph</strong>
+              <span style="font-size:10.5px; color:#7d8590;">Центральность импортов & сжатие</span>
+            </div>
+            <div class="arch-node" onclick="inspectNode('drift_vector')" onmouseenter="inspectNode('drift_vector')" style="background:#11141a; border:1px solid #f97316; padding:10px; border-radius:8px; cursor:pointer;">
+              <strong style="color:#fdba74; font-size:12px; display:block;">PolicyDriftVector.py</strong>
+              <span style="font-size:10.5px; color:#7d8590;">Векторный анализ дрейфа правил</span>
+            </div>
+            <div class="arch-node" onclick="inspectNode('meta_patch')" onmouseenter="inspectNode('meta_patch')" style="background:#11141a; border:1px solid #f97316; padding:10px; border-radius:8px; cursor:pointer;">
+              <strong style="color:#fdba74; font-size:12px; display:block;">Meta-over-Patch Engine</strong>
+              <span style="font-size:10.5px; color:#7d8590;">Реестр failures.jsonl</span>
+            </div>
+            <div class="arch-node" onclick="inspectNode('summary_chunker')" onmouseenter="inspectNode('summary_chunker')" style="background:#11141a; border:1px solid #f97316; padding:10px; border-radius:8px; cursor:pointer;">
+              <strong style="color:#fdba74; font-size:12px; display:block;">SummaryChunker.py</strong>
+              <span style="font-size:10.5px; color:#7d8590;">Обогащенный чанкинг базы знаний</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Слой 3: Tool & FastMCP Bridge -->
+        <div style="background:#181b22; border:1px solid #10b981; border-radius:10px; padding:14px;">
+          <div style="font-family:var(--mono); font-size:10.5px; text-transform:uppercase; color:#34d399; margin-bottom:10px; font-weight:bold; display:flex; align-items:center; gap:6px;">
+            <span>🔌</span> Tool & FastMCP Gateway
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div class="arch-node" onclick="inspectNode('fast_mcp')" onmouseenter="inspectNode('fast_mcp')" style="background:#11141a; border:1px solid #10b981; padding:10px; border-radius:8px; cursor:pointer;">
+              <strong style="color:#6ee7b7; font-size:12px; display:block;">FastMCP RPC Gateway</strong>
+              <span style="font-size:10.5px; color:#7d8590;">GitHub, Postgres, Slack, FS Sandbox</span>
+            </div>
+            <div class="arch-node" onclick="inspectNode('agent_skills')" onmouseenter="inspectNode('agent_skills')" style="background:#11141a; border:1px solid #10b981; padding:10px; border-radius:8px; cursor:pointer;">
+              <strong style="color:#6ee7b7; font-size:12px; display:block;">9-Stage Agent-Skills</strong>
+              <span style="font-size:10.5px; color:#7d8590;">+ using-agent-skills (Surface Assumptions)</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Интерактивная боковая панель инспекции узла -->
+      <div id="nodeDetailPanel" style="background:#181b22; border:1px solid #363b43; border-radius:10px; padding:18px; display:flex; flex-direction:column; justify-content:space-between;">
+        <div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <span id="nodeLayerBadge" style="font-family:var(--mono); font-size:10px; padding:2px 6px; border-radius:4px; background:rgba(37,99,235,0.2); color:#60a5fa; border:1px solid #3b82f6;">
+              Zone P/R (Immutable)
+            </span>
+            <span style="font-family:var(--mono); font-size:10px; color:#8fce9b;">● Verified (30/30 Unit Tests)</span>
+          </div>
+
+          <h3 id="nodeTitle" style="color:#fff; font-size:16px; margin:0 0 12px; font-weight:bold;">
+            Supervisor [launcher.py]
+          </h3>
+
+          <div style="display:flex; flex-direction:column; gap:10px; font-size:12px;">
+            <div style="background:#11141a; padding:10px; border-radius:6px; border:1px solid #262a30;">
+              <strong style="color:#f0a868; font-family:var(--mono); font-size:10.5px; display:block; margin-bottom:2px;">1. ЧТО ЭТО (WHAT):</strong>
+              <span id="nodeWhat">Неизменяемый внешний загрузчик и гипервизор жизненного цикла процессов агента.</span>
+            </div>
+
+            <div style="background:#11141a; padding:10px; border-radius:6px; border:1px solid #262a30;">
+              <strong style="color:#8fce9b; font-family:var(--mono); font-size:10.5px; display:block; margin-bottom:2px;">2. ЗАЧЕМ НУЖНО (WHY):</strong>
+              <span id="nodeWhy">Обеспечивает Out-of-Band контроль, обрабатывает внеполосный сигнал /panic-stop и возвращает код 10.</span>
+            </div>
+
+            <div style="background:#11141a; padding:10px; border-radius:6px; border:1px solid #262a30;">
+              <strong style="color:#60a5fa; font-family:var(--mono); font-size:10.5px; display:block; margin-bottom:2px;">3. ПОЧЕМУ ЗДЕСЬ (WHY HERE):</strong>
+              <span id="nodeWhyHere">Слой [P/R]. Находится вне досягаемости изменяемого агента (Zero Self-Reference) для исключения самопоедания защиты.</span>
+            </div>
+
+            <div style="background:#11141a; padding:10px; border-radius:6px; border:1px solid #262a30;">
+              <strong style="color:#c084fc; font-family:var(--mono); font-size:10.5px; display:block; margin-bottom:2px;">4. ПОТОК СИГНАЛОВ (FROM → TO):</strong>
+              <span id="nodeFlow">Системный загрузчик / Оператор → Инициализация Mutable Runtime → Ожидание сигналов.</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:14px; padding-top:10px; border-top:1px solid #262a30; font-family:var(--mono); font-size:11px; color:#7d8590; display:flex; justify-content:space-between;">
+          <span>Файл: <code id="nodeFile" style="color:#60a5fa; background:none; padding:0;">Supervisor/launcher.py</code></span>
+          <span style="color:#8fce9b;">Статус: READY</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ==================== TAB 2: ДОРОЖНАЯ КАРТА ==================== -->
+  <div id="deck-roadmap" class="deck-pane" style="display:none;">
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">
+      
+      <!-- Phase 1 Card -->
+      <div style="background:#181b22; border:1px solid #10b981; border-radius:10px; padding:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-family:var(--mono); font-size:10px; background:rgba(16,185,129,0.2); color:#34d399; padding:2px 6px; border-radius:4px; font-weight:bold;">
+            ФАЗА 1 (ЗАВЕРШЕНО 100%)
+          </span>
+          <span style="color:#34d399; font-size:14px;">✅</span>
+        </div>
+        <h4 style="color:#fff; font-size:14px; margin:0 0 8px;">Static Guardrails & MVP Core</h4>
+        <p style="font-size:11.5px; color:#a0a6b0; margin:0 0 12px;">
+          Развертывание неизменяемого Supervisor, классификатора рисков, FastMCP сервера и 8 манифестов SDLC.
+        </p>
+        <div style="font-size:11px; font-family:var(--mono); color:#7d8590; display:flex; flex-direction:column; gap:4px;">
+          <div style="color:#8fce9b;">✓ 13 Принципов Конституции (BIBLE.md)</div>
+          <div style="color:#8fce9b;">✓ Детерминированный MAX Risk (classify_diff)</div>
+          <div style="color:#8fce9b;">✓ FastMCP RPC Server (@mcp.tool)</div>
+          <div style="color:#8fce9b;">✓ 18/18 Доказательных юнит-тестов</div>
+        </div>
+      </div>
+
+      <!-- Phase 2 Card -->
+      <div style="background:#181b22; border:1px solid #10b981; border-radius:10px; padding:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-family:var(--mono); font-size:10px; background:rgba(16,185,129,0.2); color:#34d399; padding:2px 6px; border-radius:4px; font-weight:bold;">
+            ФАЗА 2 (ЗАВЕРШЕНО 100%)
+          </span>
+          <span style="color:#34d399; font-size:14px;">✅</span>
+        </div>
+        <h4 style="color:#fff; font-size:14px; margin:0 0 8px;">Worktrees & Quorum Review</h4>
+        <p style="font-size:11.5px; color:#a0a6b0; margin:0 0 12px;">
+          Изоляция субагентов во временных Git ветках, мультимодельный арбитраж Claudexor и двухэтапное SHA-256 слияние.
+        </p>
+        <div style="font-size:11px; font-family:var(--mono); color:#7d8590; display:flex; flex-direction:column; gap:4px;">
+          <div style="color:#8fce9b;">✓ WorktreeSandbox.py (Git Worktrees & CRLF Guard)</div>
+          <div style="color:#8fce9b;">✓ QuorumReviewer.py (Angle Diversity Veto)</div>
+          <div style="color:#8fce9b;">✓ CommitGate.py (Preflight & Re-fingerprint SHA-256)</div>
+          <div style="color:#8fce9b;">✓ 26/26 Доказательных юнит-тестов PASS</div>
+        </div>
+      </div>
+
+      <!-- Phase 3 Card -->
+      <div style="background:#181b22; border:2px solid #9333ea; border-radius:10px; padding:16px; box-shadow:0 0 15px rgba(147,51,234,0.2);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-family:var(--mono); font-size:10px; background:rgba(147,51,234,0.25); color:#c084fc; padding:2px 6px; border-radius:4px; font-weight:bold;">
+            ФАЗА 3 (ЗАВЕРШЕНО & АКТИВНО 100%)
+          </span>
+          <span style="color:#c084fc; font-size:14px;">🔮</span>
+        </div>
+        <h4 style="color:#fff; font-size:14px; margin:0 0 8px;">Autonomous Recursive Loop</h4>
+        <p style="font-size:11.5px; color:#a0a6b0; margin:0 0 12px;">
+          Непрерывное саморазвитие в фоновом режиме, анализ смыслового дрейфа политик и сжатие по Size Ratchets.
+        </p>
+        <div style="font-size:11px; font-family:var(--mono); color:#7d8590; display:flex; flex-direction:column; gap:4px;">
+          <div style="color:#8fce9b;">✓ EvolutionDaemon.py (Фоновый рекурсивный демон)</div>
+          <div style="color:#8fce9b;">✓ PolicyDriftVector.py (Векторный анализ дрейфа)</div>
+          <div style="color:#8fce9b;">✓ SummaryChunker.py (Summary-Augmented Chunks)</div>
+          <div style="color:#8fce9b;">✓ 30/30 Доказательных юнит-тестов PASS</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ==================== TAB 3: ЖИВОЙ ЧЕК-ЛИСТ ==================== -->
+  <div id="deck-todo" class="deck-pane" style="display:none;">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+      
+      <div style="background:#181b22; border:1px solid #262a30; border-radius:10px; padding:16px;">
+        <h4 style="color:#60a5fa; font-size:13px; margin:0 0 10px; font-family:var(--mono);">
+          🛡️ /Supervisor & Quorum Layer (Zone P/R)
+        </h4>
+        <div style="display:flex; flex-direction:column; gap:8px; font-size:12px;">
+          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-01: Конституция BIBLE.md (13 Принципов)</label>
+          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-02: launcher.py (/panic-stop code 10)</label>
+          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-03: guard-policy-plane.sh (Onboarding)</label>
+          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-04: classify_diff.py (MAX Risk & self-check)</label>
+          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-05: WorkspaceOrchestrator.py (Hierarchy v3)</label>
+          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-06: SizeRatchets.py (shrink-only)</label>
+          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-07: WorktreeSandbox.py (Изоляция песочниц)</label>
+          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-08: QuorumReviewer.py (Angle Diversity Veto)</label>
+          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-09: CommitGate.py (Preflight & Re-fingerprint)</label>
+          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-10: EvolutionDaemon.py (Фоновый рекурсивный контур)</label>
+        </div>
+      </div>
+
+      <div style="background:#181b22; border:1px solid #262a30; border-radius:10px; padding:16px;">
+        <h4 style="color:#fdba74; font-size:13px; margin:0 0 10px; font-family:var(--mono);">
+          🧠 /Core, /Tool & /tests Layer
+        </h4>
+        <div style="display:flex; flex-direction:column; gap:8px; font-size:12px;">
+          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-COR-01: ContextFit.py (Граф импортов)</label>
+          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-COR-02: MetaOverPatch.py (failures.jsonl)</label>
+          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-COR-03: PolicyDriftVector.py (Векторный дрейф)</label>
+          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-COR-04: SummaryChunker.py (Summary-Augmented RAG)</label>
+          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-TOL-01: 9 Manifests agent-skills (+ using-agent-skills)</label>
+          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-TOL-02: FastMCP RPC Server (@mcp.tool)</label>
+          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-EYE-01: Time-Travel Explorer & Dashboard</label>
+          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-TST-01: 30/30 Доказательных тестов (All Phases OK)</label>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ==================== TAB 4: TIME TRAVEL & BRANCH REPLAY ==================== -->
+  <div id="deck-travel" class="deck-pane" style="display:none;">
+    <div style="background:#181b22; border:1px solid #363b43; border-radius:10px; padding:20px; margin-bottom:16px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+        <div>
+          <h3 style="color:#fff; font-size:16px; margin:0 0 4px;">🕰️ Интерактивное Путешествие по Версиям и Веткам</h3>
+          <p style="font-size:11.5px; color:#7d8590; margin:0;">
+            Переключайтесь между снапшотами развития проекта или запустите автоматическое воспроизведение эволюции.
+          </p>
+        </div>
+        <button onclick="startEvolutionReplay()" style="background:#f0a868; color:#14161a; border:none; padding:7px 16px; border-radius:8px; font-size:11.5px; font-family:var(--mono); font-weight:bold; cursor:pointer; display:flex; align-items:center; gap:6px;">
+          <span>▶️</span> Воспроизвести эволюцию (Auto-Replay)
+        </button>
+      </div>
+
+      <!-- Селектор версий и веток -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px; margin-bottom:20px;">
+        <button class="v-btn active" id="vbtn-v3" onclick="selectTimeVersion('v3', this)" style="background:#1c1f25; border:1px solid #9333ea; padding:12px; border-radius:8px; text-align:left; cursor:pointer;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <strong style="color:#c084fc; font-size:12px; font-family:var(--mono);">v3.0.0 (Фаза 3)</strong>
+            <span style="font-size:9px; background:rgba(147,51,234,0.2); color:#c084fc; padding:1px 5px; border-radius:3px;">ACTIVE</span>
+          </div>
+          <div style="font-size:11px; color:#dfe3e8;">Recursive Self-Evo Loop</div>
+          <div style="font-size:10px; color:#7d8590; margin-top:4px;">30/30 Tests • PolicyDrift • Daemon</div>
+        </button>
+
+        <button class="v-btn" id="vbtn-v2" onclick="selectTimeVersion('v2', this)" style="background:#11141a; border:1px solid #363b43; padding:12px; border-radius:8px; text-align:left; cursor:pointer;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <strong style="color:#60a5fa; font-size:12px; font-family:var(--mono);">v2.0.0 (Фаза 2)</strong>
+            <span style="font-size:9px; background:rgba(37,99,235,0.2); color:#60a5fa; padding:1px 5px; border-radius:3px;">STABLE</span>
+          </div>
+          <div style="font-size:11px; color:#dfe3e8;">Worktrees & Quorum Review</div>
+          <div style="font-size:10px; color:#7d8590; margin-top:4px;">26/26 Tests • Angle Diversity Veto</div>
+        </button>
+
+        <button class="v-btn" id="vbtn-v1" onclick="selectTimeVersion('v1', this)" style="background:#11141a; border:1px solid #363b43; padding:12px; border-radius:8px; text-align:left; cursor:pointer;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <strong style="color:#34d399; font-size:12px; font-family:var(--mono);">v1.0.0 (Фаза 1)</strong>
+            <span style="font-size:9px; background:rgba(16,185,129,0.2); color:#34d399; padding:1px 5px; border-radius:3px;">INITIAL</span>
+          </div>
+          <div style="font-size:11px; color:#dfe3e8;">Static Guardrails & MVP</div>
+          <div style="font-size:10px; color:#7d8590; margin-top:4px;">18/18 Tests • Supervisor • FastMCP</div>
+        </button>
+
+        <button class="v-btn" id="vbtn-sandbox" onclick="selectTimeVersion('sandbox', this)" style="background:#11141a; border:1px dashed #f59e0b; padding:12px; border-radius:8px; text-align:left; cursor:pointer;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <strong style="color:#fbbf24; font-size:12px; font-family:var(--mono);">sandbox/evo-*</strong>
+            <span style="font-size:9px; background:rgba(245,158,11,0.2); color:#fbbf24; padding:1px 5px; border-radius:3px;">EPHEMERAL</span>
+          </div>
+          <div style="font-size:11px; color:#dfe3e8;">Isolated Git Worktree</div>
+          <div style="font-size:10px; color:#7d8590; margin-top:4px;">Scout/Child subagent sandbox</div>
+        </button>
+      </div>
+
+      <!-- Детальная панель выбранного снапшота -->
+      <div id="timeSnapshotCard" style="background:#11141a; border:1px solid #262a30; border-radius:8px; padding:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <h4 id="snapTitle" style="color:#c084fc; font-size:14px; margin:0;">
+            v3.0.0 — Автономный рекурсивный контур саморазвития (Phase 3 Release)
+          </h4>
+          <span id="snapTests" style="font-family:var(--mono); font-size:11px; color:#8fce9b;">
+            30/30 Юнит-тестов PASS
+          </span>
+        </div>
+        <p id="snapDesc" style="font-size:12px; color:#dfe3e8; line-height:1.6; margin:0 0 12px;">
+          Полная активация рекурсивного саморазвития: фоновый демон EvolutionDaemon выполняет непрерывную оптимизацию кодовой базы в часы простоя, PolicyDriftVector предотвращает размывание правил безопасности, SummaryChunker обогащает базу знаний.
+        </p>
+        <div style="display:flex; flex-wrap:wrap; gap:8px; font-family:var(--mono); font-size:10.5px;">
+          <span style="background:#1c1f25; padding:3px 8px; border-radius:4px; border:1px solid #363b43; color:#93c5fd;">SHA-256 Commit Gate: ACTIVE</span>
+          <span style="background:#1c1f25; padding:3px 8px; border-radius:4px; border:1px solid #363b43; color:#34d399;">Quorum Veto: 3 Perspectives</span>
+          <span style="background:#1c1f25; padding:3px 8px; border-radius:4px; border:1px solid #363b43; color:#f0a868;">Shrink-Only Ratchets: 72 Files</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ==================== TAB 6: ВОПРОСЫ, ОТВЕТЫ И АРХИТЕКТУРНЫЕ ОБОСНОВАНИЯ ==================== -->
+  <div id="deck-questions" class="deck-pane" style="display:none;">
+    <div style="background:#181b22; border:1px solid #0284c7; border-radius:10px; padding:20px; margin-bottom:16px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+        <div>
+          <h3 style="color:#38bdf8; font-size:16px; margin:0 0 4px; display:flex; align-items:center; gap:8px;">
+            <span>💡</span> Архитектурные Вопросы & Обоснования (Side Question Reasons & Decision Matrix)
+          </h3>
+          <p style="font-size:11.5px; color:#7d8590; margin:0;">
+            Детальная доказательная база решений, инвариантов и нейтрализации системных рисков саморазвивающегося ядра.
+          </p>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <input type="text" id="qFilterInput" onkeyup="filterQuestions()" placeholder="🔍 Поиск по вопросам, коду, файлам..." style="background:#11141a; border:1px solid #363b43; color:#dfe3e8; padding:6px 12px; border-radius:6px; font-size:11.5px; font-family:var(--mono); width:240px;">
+        </div>
+      </div>
+
+      <!-- Фильтры по категориям -->
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px;">
+        <button class="q-cat active" onclick="filterQuestionCat('all', this)" style="background:#0284c7; color:#fff; border:none; padding:4px 10px; border-radius:4px; font-size:11px; font-family:var(--mono); cursor:pointer;">Все (17)</button>
+        <button class="q-cat" onclick="filterQuestionCat('mcp', this)" style="background:#1c1f25; color:#7d8590; border:1px solid #363b43; padding:4px 10px; border-radius:4px; font-size:11px; font-family:var(--mono); cursor:pointer;">🔌 MCP & Skills</button>
+        <button class="q-cat" onclick="filterQuestionCat('self_evo', this)" style="background:#1c1f25; color:#7d8590; border:1px solid #363b43; padding:4px 10px; border-radius:4px; font-size:11px; font-family:var(--mono); cursor:pointer;">🔄 Self-Evo Core</button>
+        <button class="q-cat" onclick="filterQuestionCat('gov', this)" style="background:#1c1f25; color:#7d8590; border:1px solid #363b43; padding:4px 10px; border-radius:4px; font-size:11px; font-family:var(--mono); cursor:pointer;">🛡️ Hierarchy v3 & Governance</button>
+        <button class="q-cat" onclick="filterQuestionCat('sdlc', this)" style="background:#1c1f25; color:#7d8590; border:1px solid #363b43; padding:4px 10px; border-radius:4px; font-size:11px; font-family:var(--mono); cursor:pointer;">🚀 SDLC & Prompts</button>
+        <button class="q-cat" onclick="filterQuestionCat('rel', this)" style="background:#1c1f25; color:#7d8590; border:1px solid #363b43; padding:4px 10px; border-radius:4px; font-size:11px; font-family:var(--mono); cursor:pointer;">🎯 Reliability & Safety</button>
+      </div>
+
+      <!-- Список карточек вопросов и обоснований -->
+      <div id="questionsContainer" style="display:flex; flex-direction:column; gap:12px;">
+
+        <!-- Q1 -->
+        <div class="q-card" data-cat="mcp" style="background:#14161a; border:1px solid #262a30; border-radius:8px; padding:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; cursor:pointer;" onclick="toggleQDetail(this)">
+            <div>
+              <span style="font-family:var(--mono); font-size:9.5px; background:rgba(2,132,199,0.2); color:#38bdf8; padding:2px 6px; border-radius:4px; text-transform:uppercase;">MCP & SKILLS</span>
+              <h4 style="color:#fff; font-size:13.5px; margin:4px 0 0;">Механизм Progressive Disclosure в манифестах SKILL.md</h4>
+            </div>
+            <span class="q-icon" style="color:#38bdf8; font-size:16px;">▼</span>
+          </div>
+          <div class="q-detail" style="display:block; font-size:12px; color:#dfe3e8; line-height:1.6; border-top:1px solid #262a30; padding-top:10px; margin-top:8px;">
+            <div style="background:#1c1f25; padding:8px 12px; border-radius:6px; margin-bottom:8px;">
+              <strong style="color:#f0a868; font-family:var(--mono); font-size:10px; display:block;">ОБОСНОВАНИЕ & ПРИЧИНА РЕШЕНИЯ:</strong>
+              Прямая загрузка всех инструкций раздувает контекст и вызывает «lost-in-the-middle». YAML frontmatter загружает только краткое резюме (name, description), а тело навыка подгружается LLM исключительно по прямому триггеру задачи.
+            </div>
+            <div style="display:flex; gap:12px; font-family:var(--mono); font-size:10px; color:#7d8590;">
+              <span>📁 Файл: <code style="color:#93c5fd;">Tool/skills/*/SKILL.md</code></span>
+              <span>🔒 Конституция: <b style="color:#34d399;">Принцип 8 (Context Ratchets)</b></span>
+              <span>⚡ Статус: <b style="color:#34d399;">Внедрено (9 манифестов)</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q2 -->
+        <div class="q-card" data-cat="mcp" style="background:#14161a; border:1px solid #262a30; border-radius:8px; padding:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; cursor:pointer;" onclick="toggleQDetail(this)">
+            <div>
+              <span style="font-family:var(--mono); font-size:9.5px; background:rgba(2,132,199,0.2); color:#38bdf8; padding:2px 6px; border-radius:4px; text-transform:uppercase;">MCP & PROTOCOL</span>
+              <h4 style="color:#fff; font-size:13.5px; margin:4px 0 0;">Экосистема FastMCP (@mcp.tool) против неизолированного Python Exec</h4>
+            </div>
+            <span class="q-icon" style="color:#38bdf8; font-size:16px;">▼</span>
+          </div>
+          <div class="q-detail" style="display:block; font-size:12px; color:#dfe3e8; line-height:1.6; border-top:1px solid #262a30; padding-top:10px; margin-top:8px;">
+            <div style="background:#1c1f25; padding:8px 12px; border-radius:6px; margin-bottom:8px;">
+              <strong style="color:#f0a868; font-family:var(--mono); font-size:10px; display:block;">ОБОСНОВАНИЕ & ПРИЧИНА РЕШЕНИЯ:</strong>
+              Предотвращает бесконтрольное исполнение произвольного кода. FastMCP стандартизирует интерфейсы через JSON-RPC, генерирует строгие JSON Schema из type-hints и изолирует операции чтения/записи.
+            </div>
+            <div style="display:flex; gap:12px; font-family:var(--mono); font-size:10px; color:#7d8590;">
+              <span>📁 Файл: <code style="color:#93c5fd;">Tool/mcp_server.py</code></span>
+              <span>🔒 Конституция: <b style="color:#34d399;">Принцип 1 (Core Sovereignty)</b></span>
+              <span>⚡ Статус: <b style="color:#34d399;">Активен FastMCP RPC</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q3 -->
+        <div class="q-card" data-cat="self_evo" style="background:#14161a; border:1px solid #262a30; border-radius:8px; padding:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; cursor:pointer;" onclick="toggleQDetail(this)">
+            <div>
+              <span style="font-family:var(--mono); font-size:9.5px; background:rgba(147,51,234,0.2); color:#c084fc; padding:2px 6px; border-radius:4px; text-transform:uppercase;">SELF-EVO ISOLATION</span>
+              <h4 style="color:#fff; font-size:13.5px; margin:4px 0 0;">Физическая изоляция субагентов через Git Worktrees</h4>
+            </div>
+            <span class="q-icon" style="color:#38bdf8; font-size:16px;">▼</span>
+          </div>
+          <div class="q-detail" style="display:block; font-size:12px; color:#dfe3e8; line-height:1.6; border-top:1px solid #262a30; padding-top:10px; margin-top:8px;">
+            <div style="background:#1c1f25; padding:8px 12px; border-radius:6px; margin-bottom:8px;">
+              <strong style="color:#f0a868; font-family:var(--mono); font-size:10px; display:block;">ОБОСНОВАНИЕ & ПРИЧИНА РЕШЕНИЯ:</strong>
+              Субагенты Planning Scout и Acting Child не имеют права мутировать боевое дерево файлов. Они создают эфемерные ветки в <code>worktrees/</code>, фиксируют отпечаток SHA-256 и после прохождения кворума слияние выполняет Supervisor.
+            </div>
+            <div style="display:flex; gap:12px; font-family:var(--mono); font-size:10px; color:#7d8590;">
+              <span>📁 Файл: <code style="color:#93c5fd;">Supervisor/WorktreeSandbox.py</code></span>
+              <span>🔒 Конституция: <b style="color:#34d399;">Принцип 9 (Worktree Isolation)</b></span>
+              <span>⚡ Статус: <b style="color:#34d399;">Верифицировано тестами</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q4 -->
+        <div class="q-card" data-cat="rel" style="background:#14161a; border:1px solid #262a30; border-radius:8px; padding:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; cursor:pointer;" onclick="toggleQDetail(this)">
+            <div>
+              <span style="font-family:var(--mono); font-size:9.5px; background:rgba(239,68,68,0.2); color:#f87171; padding:2px 6px; border-radius:4px; text-transform:uppercase;">QUORUM & ARBITRATION</span>
+              <h4 style="color:#fff; font-size:13.5px; margin:4px 0 0;">Мультимодельный кворум: отказ от мажоритарного голосования (Angle Diversity Veto)</h4>
+            </div>
+            <span class="q-icon" style="color:#38bdf8; font-size:16px;">▼</span>
+          </div>
+          <div class="q-detail" style="display:block; font-size:12px; color:#dfe3e8; line-height:1.6; border-top:1px solid #262a30; padding-top:10px; margin-top:8px;">
+            <div style="background:#1c1f25; padding:8px 12px; border-radius:6px; margin-bottom:8px;">
+              <strong style="color:#f0a868; font-family:var(--mono); font-size:10px; display:block;">ОБОСНОВАНИЕ & ПРИЧИНА РЕШЕНИЯ:</strong>
+              Голосование 2-из-3 создает эффект эхо-камеры и пропускает критические уязвимости. Каждая модель имеет свою оптику (Claude 3.7 = Sentinel, GPT-4o = Functional, DeepSeek = Bloat). Право вето хотя бы одной модели блокирует слияние.
+            </div>
+            <div style="display:flex; gap:12px; font-family:var(--mono); font-size:10px; color:#7d8590;">
+              <span>📁 Файл: <code style="color:#93c5fd;">Supervisor/QuorumReviewer.py</code></span>
+              <span>🔒 Конституция: <b style="color:#34d399;">Принцип 10 (Angle Diversity Veto)</b></span>
+              <span>⚡ Статус: <b style="color:#34d399;">3/3 Перспективы активны</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q5 -->
+        <div class="q-card" data-cat="self_evo" style="background:#14161a; border:1px solid #262a30; border-radius:8px; padding:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; cursor:pointer;" onclick="toggleQDetail(this)">
+            <div>
+              <span style="font-family:var(--mono); font-size:9.5px; background:rgba(147,51,234,0.2); color:#c084fc; padding:2px 6px; border-radius:4px; text-transform:uppercase;">GATE INTEGRITY</span>
+              <h4 style="color:#fff; font-size:13.5px; margin:4px 0 0;">Двухэтапный Reviewed Commit Gate (Preflight vs Re-fingerprint SHA-256)</h4>
+            </div>
+            <span class="q-icon" style="color:#38bdf8; font-size:16px;">▼</span>
+          </div>
+          <div class="q-detail" style="display:block; font-size:12px; color:#dfe3e8; line-height:1.6; border-top:1px solid #262a30; padding-top:10px; margin-top:8px;">
+            <div style="background:#1c1f25; padding:8px 12px; border-radius:6px; margin-bottom:8px;">
+              <strong style="color:#f0a868; font-family:var(--mono); font-size:10px; display:block;">ОБОСНОВАНИЕ & ПРИЧИНА РЕШЕНИЯ:</strong>
+              Защита от race condition и подмены кода во время асинхронного вызова LLM-судей. Если SHA-256 диффа после кворума отличается от Preflight-отпечатка даже на 1 байт, слияние мгновенно блокируется.
+            </div>
+            <div style="display:flex; gap:12px; font-family:var(--mono); font-size:10px; color:#7d8590;">
+              <span>📁 Файл: <code style="color:#93c5fd;">Supervisor/CommitGate.py</code></span>
+              <span>🔒 Конституция: <b style="color:#34d399;">Принцип 11 (Two-Stage SHA-256)</b></span>
+              <span>⚡ Статус: <b style="color:#34d399;">Верифицировано</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q6 -->
+        <div class="q-card" data-cat="gov" style="background:#14161a; border:1px solid #262a30; border-radius:8px; padding:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; cursor:pointer;" onclick="toggleQDetail(this)">
+            <div>
+              <span style="font-family:var(--mono); font-size:9.5px; background:rgba(59,130,246,0.2); color:#60a5fa; padding:2px 6px; border-radius:4px; text-transform:uppercase;">HIERARCHY V3</span>
+              <h4 style="color:#fff; font-size:13.5px; margin:4px 0 0;">Динамическая инверсия топологии вложенности ([self_evo] vs [prod_evo])</h4>
+            </div>
+            <span class="q-icon" style="color:#38bdf8; font-size:16px;">▼</span>
+          </div>
+          <div class="q-detail" style="display:block; font-size:12px; color:#dfe3e8; line-height:1.6; border-top:1px solid #262a30; padding-top:10px; margin-top:8px;">
+            <div style="background:#1c1f25; padding:8px 12px; border-radius:6px; margin-bottom:8px;">
+              <strong style="color:#f0a868; font-family:var(--mono); font-size:10px; display:block;">ОБОСНОВАНИЕ & ПРИЧИНА РЕШЕНИЯ:</strong>
+              В монолитных системах агент блокирует продуктовые изменения, считая их атакой на свое ядро. Инверсия перемещает суверенитет: в [prod_evo] проект встает на ранг 1, а агент становится дочерним воркером на ранге 2.
+            </div>
+            <div style="display:flex; gap:12px; font-family:var(--mono); font-size:10px; color:#7d8590;">
+              <span>📁 Файл: <code style="color:#93c5fd;">Supervisor/WorkspaceOrchestrator.py</code></span>
+              <span>🔒 Конституция: <b style="color:#34d399;">Принцип 1 (Core Sovereignty)</b></span>
+              <span>⚡ Статус: <b style="color:#34d399;">Ранги 0/1/2/3 активны</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q7 -->
+        <div class="q-card" data-cat="gov" style="background:#14161a; border:1px solid #262a30; border-radius:8px; padding:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; cursor:pointer;" onclick="toggleQDetail(this)">
+            <div>
+              <span style="font-family:var(--mono); font-size:9.5px; background:rgba(59,130,246,0.2); color:#60a5fa; padding:2px 6px; border-radius:4px; text-transform:uppercase;">CLASSIFY DIFF</span>
+              <h4 style="color:#fff; font-size:13.5px; margin:4px 0 0;">Математический расчет риска (MAX_RISK_WINS) и запрет семантических суждений</h4>
+            </div>
+            <span class="q-icon" style="color:#38bdf8; font-size:16px;">▼</span>
+          </div>
+          <div class="q-detail" style="display:block; font-size:12px; color:#dfe3e8; line-height:1.6; border-top:1px solid #262a30; padding-top:10px; margin-top:8px;">
+            <div style="background:#1c1f25; padding:8px 12px; border-radius:6px; margin-bottom:8px;">
+              <strong style="color:#f0a868; font-family:var(--mono); font-size:10px; display:block;">ОБОСНОВАНИЕ & ПРИЧИНА РЕШЕНИЯ:</strong>
+              Языковая модель не имеет права «рассуждать» о рисках своих правок. Уровень риска вычисляется бинарным скриптом по формуле Risk = max(Layer_0..Layer_N). Вложенная политика может только сужать права.
+            </div>
+            <div style="display:flex; gap:12px; font-family:var(--mono); font-size:10px; color:#7d8590;">
+              <span>📁 Файл: <code style="color:#93c5fd;">Supervisor/classify_diff.py</code></span>
+              <span>🔒 Конституция: <b style="color:#34d399;">Принцип 2 (MAX_RISK_WINS)</b></span>
+              <span>⚡ Статус: <b style="color:#34d399;">100% Fail-Closed</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q8 -->
+        <div class="q-card" data-cat="rel" style="background:#14161a; border:1px solid #262a30; border-radius:8px; padding:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; cursor:pointer;" onclick="toggleQDetail(this)">
+            <div>
+              <span style="font-family:var(--mono); font-size:9.5px; background:rgba(239,68,68,0.2); color:#f87171; padding:2px 6px; border-radius:4px; text-transform:uppercase;">OUT-OF-BAND EMERGENCY</span>
+              <h4 style="color:#fff; font-size:13.5px; margin:4px 0 0;">Внеполосный экстренный останов (/PANIC) с кодом возврата 10</h4>
+            </div>
+            <span class="q-icon" style="color:#38bdf8; font-size:16px;">▼</span>
+          </div>
+          <div class="q-detail" style="display:block; font-size:12px; color:#dfe3e8; line-height:1.6; border-top:1px solid #262a30; padding-top:10px; margin-top:8px;">
+            <div style="background:#1c1f25; padding:8px 12px; border-radius:6px; margin-bottom:8px;">
+              <strong style="color:#f0a868; font-family:var(--mono); font-size:10px; display:block;">ОБОСНОВАНИЕ & ПРИЧИНА РЕШЕНИЯ:</strong>
+              При зацикливании или нарушении инвариантов сигнал остановки не передается LLM (модель может проигнорировать запрос). Супервизор аппаратно выполняет taskkill/SIGKILL дерева процессов и возвращает 10 (REQUIRE_HUMAN).
+            </div>
+            <div style="display:flex; gap:12px; font-family:var(--mono); font-size:10px; color:#7d8590;">
+              <span>📁 Файл: <code style="color:#93c5fd;">Supervisor/launcher.py</code></span>
+              <span>🔒 Конституция: <b style="color:#34d399;">Принцип 5 (Out-of-Band /PANIC)</b></span>
+              <span>⚡ Статус: <b style="color:#34d399;">Аппаратная изоляция</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q9 -->
+        <div class="q-card" data-cat="sdlc" style="background:#14161a; border:1px solid #262a30; border-radius:8px; padding:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; cursor:pointer;" onclick="toggleQDetail(this)">
+            <div>
+              <span style="font-family:var(--mono); font-size:9.5px; background:rgba(16,185,129,0.2); color:#34d399; padding:2px 6px; border-radius:4px; text-transform:uppercase;">SDLC & TDD</span>
+              <h4 style="color:#fff; font-size:13.5px; margin:4px 0 0;">Доказательное тестирование: фиксация падения на сломанном коде</h4>
+            </div>
+            <span class="q-icon" style="color:#38bdf8; font-size:16px;">▼</span>
+          </div>
+          <div class="q-detail" style="display:block; font-size:12px; color:#dfe3e8; line-height:1.6; border-top:1px solid #262a30; padding-top:10px; margin-top:8px;">
+            <div style="background:#1c1f25; padding:8px 12px; border-radius:6px; margin-bottom:8px;">
+              <strong style="color:#f0a868; font-family:var(--mono); font-size:10px; display:block;">ОБОСНОВАНИЕ & ПРИЧИНА РЕШЕНИЯ:</strong>
+              Тест, который никогда не падал, может содержать тривиальные ассерты (например, assert True) и маскировать регрессии. Тест признается доказательством только после документированного падения (Red-Green-Refactor).
+            </div>
+            <div style="display:flex; gap:12px; font-family:var(--mono); font-size:10px; color:#7d8590;">
+              <span>📁 Файл: <code style="color:#93c5fd;">tests/test_*.py</code></span>
+              <span>🔒 Конституция: <b style="color:#34d399;">Принцип 7 (Red-Green Proof)</b></span>
+              <span>⚡ Статус: <b style="color:#34d399;">32/32 Доказано</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q10 -->
+        <div class="q-card" data-cat="self_evo" style="background:#14161a; border:1px solid #262a30; border-radius:8px; padding:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; cursor:pointer;" onclick="toggleQDetail(this)">
+            <div>
+              <span style="font-family:var(--mono); font-size:9.5px; background:rgba(147,51,234,0.2); color:#c084fc; padding:2px 6px; border-radius:4px; text-transform:uppercase;">RATCHETS</span>
+              <h4 style="color:#fff; font-size:13.5px; margin:4px 0 0;">Храповики размера (Size Ratchets): правило Shrink-Only</h4>
+            </div>
+            <span class="q-icon" style="color:#38bdf8; font-size:16px;">▼</span>
+          </div>
+          <div class="q-detail" style="display:block; font-size:12px; color:#dfe3e8; line-height:1.6; border-top:1px solid #262a30; padding-top:10px; margin-top:8px;">
+            <div style="background:#1c1f25; padding:8px 12px; border-radius:6px; margin-bottom:8px;">
+              <strong style="color:#f0a868; font-family:var(--mono); font-size:10px; display:block;">ОБОСНОВАНИЕ & ПРИЧИНА РЕШЕНИЯ:</strong>
+              В процессе бесконечной рекурсивной эволюции кодовая база раздувается за счет дублирования и избыточных хелперов. Храповики фиксируют новый нижний предел объема каждого файла после удачного сжатия.
+            </div>
+            <div style="display:flex; gap:12px; font-family:var(--mono); font-size:10px; color:#7d8590;">
+              <span>📁 Файл: <code style="color:#93c5fd;">Supervisor/SizeRatchets.py</code></span>
+              <span>🔒 Конституция: <b style="color:#34d399;">Принцип 8 (Shrink-Only Ratchets)</b></span>
+              <span>⚡ Статус: <b style="color:#34d399;">72 файла зафиксировано</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q11 -->
+        <div class="q-card" data-cat="sdlc" style="background:#14161a; border:1px solid #262a30; border-radius:8px; padding:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; cursor:pointer;" onclick="toggleQDetail(this)">
+            <div>
+              <span style="font-family:var(--mono); font-size:9.5px; background:rgba(16,185,129,0.2); color:#34d399; padding:2px 6px; border-radius:4px; text-transform:uppercase;">RAG & CHUNKING</span>
+              <h4 style="color:#fff; font-size:13.5px; margin:4px 0 0;">Иерархический Summary-Augmented Chunker для RAG и конституционных норм</h4>
+            </div>
+            <span class="q-icon" style="color:#38bdf8; font-size:16px;">▼</span>
+          </div>
+          <div class="q-detail" style="display:block; font-size:12px; color:#dfe3e8; line-height:1.6; border-top:1px solid #262a30; padding-top:10px; margin-top:8px;">
+            <div style="background:#1c1f25; padding:8px 12px; border-radius:6px; margin-bottom:8px;">
+              <strong style="color:#f0a868; font-family:var(--mono); font-size:10px; display:block;">ОБОСНОВАНИЕ & ПРИЧИНА РЕШЕНИЯ:</strong>
+              При наивном разбиении документа на фрагменты теряется контекст верхнего уровня (например, родительский раздел политики). Summary-Augmented chunking прикрепляет сжатый контекст документа к каждому эмбеддингу.
+            </div>
+            <div style="display:flex; gap:12px; font-family:var(--mono); font-size:10px; color:#7d8590;">
+              <span>📁 Файл: <code style="color:#93c5fd;">Core/SummaryChunker.py</code></span>
+              <span>🔒 Конституция: <b style="color:#34d399;">Принцип 3 (Epistemic Stability)</b></span>
+              <span>⚡ Статус: <b style="color:#34d399;">Внедрен</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Q12 -->
+        <div class="q-card" data-cat="rel" style="background:#14161a; border:1px solid #262a30; border-radius:8px; padding:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; cursor:pointer;" onclick="toggleQDetail(this)">
+            <div>
+              <span style="font-family:var(--mono); font-size:9.5px; background:rgba(239,68,68,0.2); color:#f87171; padding:2px 6px; border-radius:4px; text-transform:uppercase;">CONTROL PLANE</span>
+              <h4 style="color:#fff; font-size:13.5px; margin:4px 0 0;">Daemon API на 127.0.0.1:8765 и стриминг телеметрии через SSE</h4>
+            </div>
+            <span class="q-icon" style="color:#38bdf8; font-size:16px;">▼</span>
+          </div>
+          <div class="q-detail" style="display:block; font-size:12px; color:#dfe3e8; line-height:1.6; border-top:1px solid #262a30; padding-top:10px; margin-top:8px;">
+            <div style="background:#1c1f25; padding:8px 12px; border-radius:6px; margin-bottom:8px;">
+              <strong style="color:#f0a868; font-family:var(--mono); font-size:10px; display:block;">ОБОСНОВАНИЕ & ПРИЧИНА РЕШЕНИЯ:</strong>
+              Предотвращает зависания пользовательского интерфейса при выполнении долгих задач. Сервер работает в фоновом потоке, непрерывно транслирует события через SSE и дает REST API доступ для инструментов автоматизации.
+            </div>
+            <div style="display:flex; gap:12px; font-family:var(--mono); font-size:10px; color:#7d8590;">
+              <span>📁 Файл: <code style="color:#93c5fd;">Core/server.py</code></span>
+              <span>🔒 Конституция: <b style="color:#34d399;">Принцип 1 (Core Floor)</b></span>
+              <span>⚡ Статус: <b style="color:#34d399;">Служба онлайн</b></span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== TAB 5: ИНСПЕКТОР RELISED_LATER ==================== -->
+  <div id="deck-relised" class="deck-pane" style="display:none;">
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px;">
+      
+      <div onclick="showLaterModal('quorum_panel')" style="background:#181b22; border:1px solid #10b981; padding:12px; border-radius:8px; cursor:pointer;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+          <strong style="color:#34d399; font-size:12px;">🏛️ Multi-Model Quorum</strong>
+          <span style="font-family:var(--mono); font-size:9.5px; background:rgba(16,185,129,0.2); color:#34d399; padding:1px 5px; border-radius:3px;">DELIVERED v2</span>
+        </div>
+        <p style="font-size:11px; color:#7d8590; margin:0;">Кросс-модельный арбитраж с правом вето (Angle Diversity).</p>
+      </div>
+
+      <div onclick="showLaterModal('worktree_sandbox')" style="background:#181b22; border:1px solid #10b981; padding:12px; border-radius:8px; cursor:pointer;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+          <strong style="color:#34d399; font-size:12px;">🌱 Worktree Sandbox</strong>
+          <span style="font-family:var(--mono); font-size:9.5px; background:rgba(16,185,129,0.2); color:#34d399; padding:1px 5px; border-radius:3px;">DELIVERED v2</span>
+        </div>
+        <p style="font-size:11px; color:#7d8590; margin:0;">Изолированные Git Worktrees для субагентов Scout/Child.</p>
+      </div>
+
+      <div onclick="showLaterModal('policy_drift')" style="background:#181b22; border:1px solid #9333ea; padding:12px; border-radius:8px; cursor:pointer;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+          <strong style="color:#c084fc; font-size:12px;">📊 Policy Drift Vector</strong>
+          <span style="font-family:var(--mono); font-size:9.5px; background:rgba(147,51,234,0.2); color:#c084fc; padding:1px 5px; border-radius:3px;">DELIVERED v3</span>
+        </div>
+        <p style="font-size:11px; color:#7d8590; margin:0;">Дельта-анализ смыслового дрейфа политик через квантование.</p>
+      </div>
+
+      <div onclick="showLaterModal('recursive_daemon')" style="background:#181b22; border:1px solid #9333ea; padding:12px; border-radius:8px; cursor:pointer;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+          <strong style="color:#c084fc; font-size:12px;">🔄 Recursive Evo Daemon</strong>
+          <span style="font-family:var(--mono); font-size:9.5px; background:rgba(147,51,234,0.2); color:#c084fc; padding:1px 5px; border-radius:3px;">DELIVERED v3</span>
+        </div>
+        <p style="font-size:11px; color:#7d8590; margin:0;">Фоновый процесс непрерывной оптимизации ядра.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ==================== TAB 6: РОЙ СУБАГЕНТОВ & ДЕРЕВО ЗАДАЧ (SWARM TASK-TREE) ==================== -->
+  <div id="deck-swarm" class="deck-pane" style="display:none;">
+    <!-- Верхняя статусная панель Feature Flags и управления -->
+    <div style="background:#14161a; border:1px solid #10b981; border-radius:10px; padding:16px 20px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+      <div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:16px;">🐝</span>
+          <strong style="color:#34d399; font-size:14px; font-family:var(--sans);">Why_Ai Swarm Orchestrator & Live Task-Tree</strong>
+          <span style="font-family:var(--mono); font-size:10px; background:rgba(16,185,129,0.2); color:#34d399; padding:2px 6px; border-radius:4px; font-weight:bold;">v1.1.0-GOLD</span>
+        </div>
+        <div style="display:flex; gap:12px; margin-top:8px; font-family:var(--mono); font-size:10.5px; color:#7d8590;">
+          <span>🌱 Worktrees: <b id="swarmSandboxCount" style="color:#34d399;">0 активных (Clean)</b></span>
+          <span>⚡ Демон: <b style="color:#38bdf8;">Background Consciousness (Tick: 300s)</b></span>
+          <span>🛡️ Idempotency Gate: <b style="color:#f0a868;">Failure-Binding Armed</b></span>
+          <span>🏛️ Кворум: <b style="color:#c084fc;">Why_Ai Multi-Harness (Class 1/2/3)</b></span>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button onclick="pruneWorktreesAction()" style="background:#1c1f25; border:1px solid #363b43; color:#dfe3e8; font-family:var(--mono); font-size:11px; padding:7px 12px; border-radius:6px; cursor:pointer; display:flex; align-items:center; gap:6px;">
+          <span>🧹</span> Prune Worktrees
+        </button>
+        <button onclick="triggerEvoCycleAction()" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-family:var(--mono); font-size:11px; padding:7px 12px; border-radius:6px; cursor:pointer; display:flex; align-items:center; gap:6px; font-weight:bold;">
+          <span>🔄</span> Trigger Evo Step
+        </button>
+      </div>
+    </div>
+
+    <!-- Графическое дерево задач роя (Swarm Task-Tree) -->
+    <div style="display:grid; grid-template-columns:1.6fr 1fr; gap:20px;">
+      
+      <!-- Левая колонка: Иерархическое дерево субагентов -->
+      <div style="background:#14161a; border:1px solid #262a30; border-radius:10px; padding:18px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; border-bottom:1px solid #262a30; padding-bottom:8px;">
+          <h4 style="margin:0; font-size:13px; color:#fff; display:flex; align-items:center; gap:6px;">
+            <span>🌳</span> Иерархическое Дерево Роя (Hierarchy v3 Live Tree)
+          </h4>
+          <span style="font-family:var(--mono); font-size:10px; color:#34d399;">● SSE Stream Active</span>
+        </div>
+
+        <!-- Узел 1: Root Sovereign Orchestrator -->
+        <div style="background:#181b22; border:1px solid #38bdf8; border-radius:8px; padding:14px; margin-bottom:12px; position:relative;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+              <span style="font-family:var(--mono); font-size:9.5px; background:rgba(56,189,248,0.2); color:#38bdf8; padding:2px 5px; border-radius:3px; font-weight:bold;">RANK 1 • SOVEREIGN ROOT</span>
+              <h5 style="margin:4px 0 2px; color:#fff; font-size:13px;">Why_Ai Core Sovereign Orchestrator</h5>
+              <div style="font-size:11px; color:#7d8590;">Управление целями, непрерывным контекстом и распределением задач субагентам.</div>
+            </div>
+            <span style="font-family:var(--mono); font-size:10px; color:#34d399; background:rgba(16,185,129,0.15); padding:2px 6px; border-radius:4px;">RUNNING</span>
+          </div>
+          <div style="margin-top:8px; font-family:var(--mono); font-size:10px; color:#94a3b8; display:flex; gap:10px;">
+            <span>📁 Context: <b style="color:#38bdf8;">Core/identity.md (Pinned)</b></span>
+            <span>🔒 Policy Floor: <b style="color:#34d399;">Supervisor Zone P/R</b></span>
+          </div>
+        </div>
+
+        <!-- Ветви к дочерним субагентам -->
+        <div style="margin-left:24px; padding-left:14px; border-left:2px dashed #363b43; display:flex; flex-direction:column; gap:12px;">
+          
+          <!-- Узел 2: Planning Scout -->
+          <div style="background:#181b22; border:1px solid #262a30; border-radius:8px; padding:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+              <div>
+                <span style="font-family:var(--mono); font-size:9px; background:rgba(147,51,234,0.2); color:#c084fc; padding:1px 5px; border-radius:3px; font-weight:bold;">SUBAGENT • PLANNING SCOUT</span>
+                <h6 style="margin:3px 0 2px; color:#fff; font-size:12px;">Architectural Scout & CoT Decomposition</h6>
+                <div style="font-size:11px; color:#7d8590;">Анализ репозитория, AST связности и синтез пошаговой спецификации.</div>
+              </div>
+              <span style="font-family:var(--mono); font-size:9.5px; color:#34d399; background:rgba(16,185,129,0.15); padding:1px 5px; border-radius:3px;">IDLE / READY</span>
+            </div>
+            <div style="margin-top:6px; font-family:var(--mono); font-size:9.5px; color:#64748b;">
+              Песочница: <code style="color:#93c5fd;">worktrees/scout-plan/</code> • Изоляция Git Worktree
+            </div>
+          </div>
+
+          <!-- Узел 3: Execution Child -->
+          <div style="background:#181b22; border:1px solid #262a30; border-radius:8px; padding:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+              <div>
+                <span style="font-family:var(--mono); font-size:9px; background:rgba(245,158,11,0.2); color:#f59e0b; padding:1px 5px; border-radius:3px; font-weight:bold;">SUBAGENT • EXECUTION CHILD</span>
+                <h6 style="margin:3px 0 2px; color:#fff; font-size:12px;">Code Synthesizer & TDD Worker</h6>
+                <div style="font-size:11px; color:#7d8590;">Генерация кандидатного диффа, прогон тестов Red-Green и проверка храповиков.</div>
+              </div>
+              <span style="font-family:var(--mono); font-size:9.5px; color:#34d399; background:rgba(16,185,129,0.15); padding:1px 5px; border-radius:3px;">IDLE / READY</span>
+            </div>
+            <div style="margin-top:6px; font-family:var(--mono); font-size:9.5px; color:#64748b;">
+              Песочница: <code style="color:#93c5fd;">worktrees/child-synth/</code> • Shrink-Only Ratchet Active
+            </div>
+          </div>
+
+          <!-- Узел 4: Class 3 Arbitrator Quorum -->
+          <div style="background:#181b22; border:1px solid #10b981; border-radius:8px; padding:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+              <div>
+                <span style="font-family:var(--mono); font-size:9px; background:rgba(16,185,129,0.2); color:#34d399; padding:1px 5px; border-radius:3px; font-weight:bold;">GATE • WHY_AI MULTI-HARNESS</span>
+                <h6 style="margin:3px 0 2px; color:#fff; font-size:12px;">Class 3 Arbitrator & Angle Diversity Quorum</h6>
+                <div style="font-size:11px; color:#7d8590;">3 независимых класса моделей (Arbitrator, Architect, Executor) с правом вето.</div>
+              </div>
+              <span style="font-family:var(--mono); font-size:9.5px; color:#34d399; background:rgba(16,185,129,0.15); padding:1px 5px; border-radius:3px;">ARMED (0 VETOES)</span>
+            </div>
+            <div style="margin-top:6px; font-family:var(--mono); font-size:9.5px; color:#64748b;">
+              Предохранитель: <code style="color:#f0a868;">Fail-Closed (Exit 10) on BIBLE Veto</code>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Правая колонка: Living Identity & Scratchpad Inspector -->
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        
+        <!-- Панель Living Identity -->
+        <div style="background:#14161a; border:1px solid #262a30; border-radius:10px; padding:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid #262a30; padding-bottom:6px;">
+            <h5 style="margin:0; font-size:12.5px; color:#38bdf8; display:flex; align-items:center; gap:6px;">
+              <span>📜</span> Living Identity (identity.md)
+            </h5>
+            <span style="font-family:var(--mono); font-size:9.5px; color:#34d399; background:rgba(16,185,129,0.15); padding:1px 5px; border-radius:3px;">PINNED: TRUE</span>
+          </div>
+          <p style="font-size:11.5px; color:#7d8590; margin:0 0 10px; line-height:1.4;">
+            Непрерывная автобиография и извлеченные уроки системы. Никогда не усекается ContextFit.
+          </p>
+          <div style="background:#181b22; border:1px solid #262a30; border-radius:6px; padding:10px; font-family:var(--mono); font-size:10.5px; color:#cbd5e1; max-height:140px; overflow-y:auto; line-height:1.5;" id="identityPreviewText">
+            Загрузка манифеста идентичности...
+          </div>
+        </div>
+
+        <!-- Панель Scratchpad (CoT) -->
+        <div style="background:#14161a; border:1px solid #262a30; border-radius:10px; padding:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid #262a30; padding-bottom:6px;">
+            <h5 style="margin:0; font-size:12.5px; color:#f0a868; display:flex; align-items:center; gap:6px;">
+              <span>📝</span> Ephemeral Scratchpad (scratchpad.md)
+            </h5>
+            <span style="font-family:var(--mono); font-size:9.5px; color:#f0a868; background:rgba(240,168,104,0.15); padding:1px 5px; border-radius:3px;">COT CANVAS</span>
+          </div>
+          <p style="font-size:11.5px; color:#7d8590; margin:0 0 10px; line-height:1.4;">
+            Рабочая область рассуждений текущей сессии. Очищается при фиксации коммита.
+          </p>
+          <div style="background:#181b22; border:1px solid #262a30; border-radius:6px; padding:10px; font-family:var(--mono); font-size:10.5px; color:#cbd5e1; max-height:140px; overflow-y:auto; line-height:1.5;" id="scratchpadPreviewText">
+            Загрузка рабочего холста рассуждений...
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Модальное окно для инспекции relised_later -->
+  <div id="laterModal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.85); z-index:9999; align-items:center; justify-content:center; padding:20px;">
+    <div style="background:#14161a; border:1px solid #363b43; max-width:620px; width:100%; border-radius:12px; padding:24px; color:#dfe3e8; box-shadow:0 20px 40px rgba(0,0,0,0.8);">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+        <div>
+          <span id="mPhase" style="font-family:var(--mono); font-size:10px; color:#f0a868; text-transform:uppercase;"></span>
+          <h3 id="mTitle" style="color:#fff; margin:4px 0 0; font-size:17px;"></h3>
+        </div>
+        <button onclick="document.getElementById('laterModal').style.display='none'" style="background:none; border:none; color:#7d8590; font-size:18px; cursor:pointer; padding:4px 8px;">✕</button>
+      </div>
+      <div style="font-size:12.5px; line-height:1.6; font-family:var(--sans); display:flex; flex-direction:column; gap:10px;">
+        <div style="background:#1c1f25; padding:10px 12px; border-radius:6px; border:1px solid #262a30;">
+          <strong style="color:#f0a868; font-family:var(--mono); font-size:10.5px; display:block;">1. ЧТО ЭТО ЗА ЭЛЕМЕНТ (WHAT):</strong>
+          <span id="mWhat"></span>
+        </div>
+        <div style="background:#1c1f25; padding:10px 12px; border-radius:6px; border:1px solid #262a30;">
+          <strong style="color:#8fce9b; font-family:var(--mono); font-size:10.5px; display:block;">2. ЗАЧЕМ НУЖЕН СИСТЕМЕ (WHY):</strong>
+          <span id="mWhy"></span>
+        </div>
+        <div style="background:#1c1f25; padding:10px 12px; border-radius:6px; border:1px solid #262a30;">
+          <strong style="color:#7aa2f7; font-family:var(--mono); font-size:10.5px; display:block;">3. КУДА МОНТИРУЕТСЯ (WHERE):</strong>
+          <code id="mWhere" style="color:#7aa2f7; background:none; padding:0;"></code>
+        </div>
+        <div style="background:#1c1f25; padding:10px 12px; border-radius:6px; border:1px solid #262a30;">
+          <strong style="color:#bb9af7; font-family:var(--mono); font-size:10.5px; display:block;">4. КАК РАБОТАЕТ (HOW):</strong>
+          <span id="mHow"></span>
+        </div>
+      </div>
+      <div style="text-align:right; margin-top:16px;">
+        <button onclick="document.getElementById('laterModal').style.display='none'" style="background:#262a30; border:1px solid #363b43; color:#fff; font-family:var(--mono); font-size:11.5px; padding:6px 14px; border-radius:6px; cursor:pointer;">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const ARCH_SPECS = {
+      supervisor: {
+        title: 'Supervisor [launcher.py]',
+        layer: 'Zone P/R (Immutable Floor)',
+        file: 'Supervisor/launcher.py',
+        what: 'Неизменяемый внешний загрузчик и гипервизор жизненного цикла процессов агента.',
+        why: 'Обеспечивает Out-of-Band контроль, обрабатывает внеполосный сигнал /panic-stop и возвращает код 10.',
+        whyHere: 'Слой [P/R]. Находится вне досягаемости изменяемого агента (Zero Self-Reference) для исключения самопоедания защиты.',
+        flow: 'Системный загрузчик / Оператор → Инициализация Mutable Runtime → Ожидание сигналов.'
+      },
+      bible_auditor: {
+        title: 'BIBLE.md & MAX Risk [classify_diff.py]',
+        layer: 'Zone P/R (Immutable Floor)',
+        file: 'Supervisor/classify_diff.py',
+        what: 'Детерминированный классификатор риска на основе git diff и 13 фундаментальных конституционных принципов.',
+        why: 'Реализует правило MAX Risk: вложенная политика может только ужесточать требования безопасности, но не ослаблять.',
+        whyHere: 'Слой [P/R]. Жестко контролирует любой дифференциал перед коммитом.',
+        flow: 'Git Diff → Расчет риска по матрице зон → Сравнение с порогом → Одобрение или код 10.'
+      },
+      orchestrator: {
+        title: 'WorkspaceOrchestrator.py (Hierarchy v3)',
+        layer: 'Zone P/R (Immutable Floor)',
+        file: 'Supervisor/WorkspaceOrchestrator.py',
+        what: 'Оркестратор топологии Hierarchy v3 и инициализатор безопасных настроек Git для песочниц.',
+        why: 'Управляет динамической инверсией рангов (Agent ⊃ Project ↔ Project ⊃ agent) и отключает CRLF на Windows.',
+        whyHere: 'Слой [P/R]. Обеспечивает математическую точность криптографических отпечатков SHA-256.',
+        flow: 'Запрос смены режима → Перестроение рангов → Фиксация Git config → Запись в .ai_workspace_state.json.'
+      },
+      evolution_daemon: {
+        title: 'EvolutionDaemon.py (Recursive Loop)',
+        layer: 'Zone P/R (Immutable Supervisor)',
+        file: 'Supervisor/EvolutionDaemon.py',
+        what: 'Фоновый демон непрерывной автономной рекурсивной эволюции ядра.',
+        why: 'Позволяет системе находить архитектурные первопричины сбоев и автоматически оптимизировать кодовую базу в часы простоя.',
+        whyHere: 'Слой [P/R]. Контролирует весь цикл создания Worktree, кворума и слияния.',
+        flow: 'failures.jsonl → Изолированный Worktree → Синтез патча → Quorum Review → 3-Way Auto-Merge.'
+      },
+      context_fit: {
+        title: 'ContextFit.py (Memory Graph)',
+        layer: 'Zone E (Mutable Task Runtime)',
+        file: 'Core/ContextFit.py',
+        what: 'Менеджер памяти на основе анализа графа связности и центральности импортов (AST Analysis).',
+        why: 'Обеспечивает детерминированное сжатие контекста при исчерпании лимита токенов за sub-100ms.',
+        whyHere: 'Слой [E]. Изменяемый рабочий рантайм агента для адаптации под типы проектов.',
+        flow: 'Сканирование AST → Расчет графа импортов → Удаление наименее связных узлов при дефиците.'
+      },
+      drift_vector: {
+        title: 'PolicyDriftVector.py (Residual Quantization)',
+        layer: 'Zone E (Mutable Analysis Engine)',
+        file: 'Core/PolicyDriftVector.py',
+        what: 'Векторный дельта-анализатор семантического дрейфа политик безопасности.',
+        why: 'Обнаруживает микро-изменения формулировок правил, маскирующие попытки обхода гейтов.',
+        whyHere: 'Слой [E]. Аналитический модуль контроля целостности политик.',
+        flow: 'Текст baseline vs candidate → Эмбеддинги → Косинусная близость → Валидация порога безопасности.'
+      },
+      meta_patch: {
+        title: 'MetaOverPatch.py (failures.jsonl)',
+        layer: 'Zone E (Mutable Task Runtime)',
+        file: 'Core/MetaOverPatch.py',
+        what: 'Движок анализа повторяющихся сбоев и реализации принципа Meta-over-Patch.',
+        why: 'Предотвращает бесконечные локальные костыли через структурный рефакторинг ядра.',
+        whyHere: 'Слой [E]. Аккумулирует опыт выполнения задач и предлагает архитектурные улучшения.',
+        flow: 'Сбой выполнения → Запись в failures.jsonl → Анализ паттернов → План рефакторинга.'
+      },
+      summary_chunker: {
+        title: 'SummaryChunker.py (Augmented RAG)',
+        layer: 'Zone E (Mutable Task Runtime)',
+        file: 'Core/SummaryChunker.py',
+        what: 'Иерархический Summary-Augmented чанкер нормативной базы и архитектурных документов.',
+        why: 'Исключает потерю контекста родительского документа при семантическом поиске.',
+        whyHere: 'Слой [E]. Подготавливает базу знаний к векторному поиску.',
+        flow: 'Markdown документ → Иерархическое дерево секций → Обогащенные чанки.'
+      },
+      fast_mcp: {
+        title: 'FastMCP Gateway [mcp_server.py]',
+        layer: 'Tool Layer (Connectors)',
+        file: 'Tool/mcp_server.py',
+        what: 'Типизированный RPC сервер протокола Model Context Protocol с декораторами @mcp.tool.',
+        why: 'Обеспечивает безопасный доступ к внешним сервисам (GitHub, Postgres, Slack, FS Sandbox).',
+        whyHere: 'Слой [Tool]. Мост между агентом и внешним окружением.',
+        flow: 'Вызов агента → Валидация аргументов JSON-RPC → Выполнение Python функции → Возврат результата.'
+      },
+      agent_skills: {
+        title: '9-Stage Agent-Skills Pipeline',
+        layer: 'Tool Layer (Skills)',
+        file: 'Tool/skills/* /SKILL.md',
+        what: 'Инженерный конвейер из 9 манифестов (+ using-agent-skills с правилом Surface Assumptions).',
+        why: 'Стандартизирует каждый шаг разработки без пропусков верификации (запрет Prompt-to-Ship).',
+        whyHere: 'Слой [Tool]. Направляет рассуждения и действия агента.',
+        flow: '/spec → /plan → /build → /test → /review → /webperf → /code-simplify → /ship.'
+      }
+    };
+
+    const TIME_SNAPSHOTS = {
+      v3: {
+        title: 'v3.0.0 — Автономный рекурсивный контур саморазвития (Phase 3 Release)',
+        tests: '30/30 Юнит-тестов PASS',
+        color: '#c084fc',
+        desc: 'Полная активация рекурсивного саморазвития: фоновый демон EvolutionDaemon выполняет непрерывную оптимизацию кодовой базы в часы простоя, PolicyDriftVector предотвращает размывание правил безопасности, SummaryChunker обогащает базу знаний.'
+      },
+      v2: {
+        title: 'v2.0.0 — Изолированные Worktrees и Мультимодельный Кворум (Phase 2 Release)',
+        tests: '26/26 Юнит-тестов PASS',
+        color: '#60a5fa',
+        desc: 'Реализована изоляция субагентов во временных Git Worktrees (WorktreeSandbox), запущен мультимодельный арбитраж Claudexor с правом вето (Angle Diversity) и двухэтапный Reviewed Commit Gate (Preflight/Re-fingerprint SHA-256).'
+      },
+      v1: {
+        title: 'v1.0.0 — Неизменяемый каркас Supervisor и 8 навыков SDLC (Phase 1 Baseline)',
+        tests: '18/18 Юнит-тестов PASS',
+        color: '#34d399',
+        desc: 'Заложен фундамент Ouroboros: 13 конституционных принципов BIBLE.md, детерминированный MAX Risk (classify_diff.py), безинсталляционный miniyaml, граф памяти ContextFit, FastMCP сервер и храповики размера SizeRatchets.'
+      },
+      sandbox: {
+        title: 'sandbox/evo-preview — Эфемерная изолированная ветка субагента',
+        tests: 'Песочница изолирована',
+        color: '#fbbf24',
+        desc: 'Временное рабочее дерево Git Worktree, в котором субагент Scout или Child синтезирует и тестирует кандидатный патч перед отправкой на арбитраж кворума. Защищает боевой рантайм от повреждений.'
+      }
+    };
+
+    function selectTimeVersion(verKey, btn) {
+      document.querySelectorAll('.v-btn').forEach(b => {
+        b.style.background = '#11141a';
+        b.style.borderColor = '#363b43';
+      });
+      if (btn) btn.style.background = '#1c1f25';
+      const snap = TIME_SNAPSHOTS[verKey];
+      if (!snap) return;
+      if (btn) btn.style.borderColor = snap.color;
+      const titleEl = document.getElementById('snapTitle');
+      const testsEl = document.getElementById('snapTests');
+      const descEl = document.getElementById('snapDesc');
+      if (titleEl) {
+        titleEl.innerText = snap.title;
+        titleEl.style.color = snap.color;
+      }
+      if (testsEl) testsEl.innerText = snap.tests;
+      if (descEl) descEl.innerText = snap.desc;
+    }
+
+    function startEvolutionReplay() {
+      const keys = ['v1', 'v2', 'v3'];
+      let step = 0;
+      const interval = setInterval(() => {
+        if (step >= keys.length) {
+          clearInterval(interval);
+          alert('🏁 Воспроизведение завершено: Система полностью саморазвернута до актуальной версии v3.0.0 (32/32 тестов PASS)!');
+          return;
+        }
+        const k = keys[step];
+        const btn = document.getElementById('vbtn-' + k);
+        selectTimeVersion(k, btn);
+        step++;
+      }, 1200);
+    }
+
+    const LATER_SPECS = {
+      quorum_panel: {
+        title: 'Claudexor Multi-Model Quorum Panel',
+        phase: 'Фаза 2: Worktree Isolation & Quorum',
+        what: 'Интерфейс мультимодельного арбитража с независимыми панелями моделей (Claude 3.7, GPT-4o, DeepSeek-R1).',
+        why: 'Исключает "эффект эхо-камеры" и семантические сбои благодаря принципу Angle Diversity (право вето любой модели).',
+        where: 'Supervisor/QuorumReviewer.py и модуль арбитража Claudexor.',
+        how: 'Параллельная отправка предложенного диффа в 3 независимых провайдера, двухэтапная проверка хэша SHA-256 (Preflight -> Review -> Re-fingerprint).'
+      },
+      worktree_sandbox: {
+        title: 'Ephemeral Git Worktree Sandbox Visualizer',
+        phase: 'Фаза 2: Worktree Isolation & Quorum',
+        what: 'Инспектор изолированных временных ветвей и песочниц субагентов (Planning Scout и Acting Child).',
+        why: 'Защищает боевой рантайм от повреждения при самомодификации кодовой базы.',
+        where: 'Supervisor/WorktreeSandbox.py.',
+        how: 'Автоматическое порождение `git worktree add` с принудительной конфигурацией `core.autocrlf false` и трехсторонним слиянием (3-Way Merge).'
+      },
+      policy_drift: {
+        title: 'Vector Policy Drift Residual Analyzer',
+        phase: 'Фаза 3: Autonomous Recursive Loop',
+        what: 'Графический монитор дельта-анализа смыслового дрейфа политик безопасности.',
+        why: 'Обнаруживает микроскопические изменения формулировок правил, маскирующие попытки обхода гейтов.',
+        where: 'Core/PolicyDriftVector.py.',
+        how: 'Аппроксимация эмбеддингов правил через каскадные словари остаточного квантования; всплеск ошибки реконструкции вызывает требование верификации человеком.'
+      },
+      recursive_daemon: {
+        title: 'Recursive Free Evolution Background Daemon',
+        phase: 'Фаза 3: Autonomous Recursive Loop',
+        what: 'Панель управления фоновым демоном непрерывной рекурсивной оптимизации ядра.',
+        why: 'Позволяет системе самостоятельно находить алгоритмические неоптимальности и рефакторить собственный код в часы простоя.',
+        where: 'Supervisor/EvolutionDaemon.py.',
+        how: 'Опрос failures.jsonl + анализ связности ContextFit -> формирование серий атомарных коммитов в изолированных песочницах.'
+      }
+    };
+
+    function inspectNode(key) {
+      const node = ARCH_SPECS[key];
+      if (!node) return;
+      const setTxt = (id, txt) => {
+        const el = document.getElementById(id);
+        if (el) el.innerText = txt;
+      };
+      setTxt('nodeTitle', node.title);
+      setTxt('nodeLayerBadge', node.layer);
+      setTxt('nodeFile', node.file);
+      setTxt('nodeWhat', node.what);
+      setTxt('nodeWhy', node.why);
+      setTxt('nodeWhyHere', node.whyHere);
+      setTxt('nodeFlow', node.flow);
+    }
+
+    function switchDeckTab(tabId, btn) {
+      document.querySelectorAll('.deck-pane').forEach(el => el.style.display = 'none');
+      document.querySelectorAll('.deck-tab').forEach(el => {
+        el.style.background = 'transparent';
+        el.style.color = '#7d8590';
+        el.style.borderColor = 'transparent';
+      });
+      const target = document.getElementById('deck-' + tabId);
+      if (target) target.style.display = 'block';
+      if (btn) {
+        btn.style.background = '#1c1f25';
+        btn.style.color = '#fff';
+        btn.style.borderColor = '#363b43';
+        btn.style.borderBottomColor = 'transparent';
+      }
+      if (tabId === 'swarm') {
+        loadIdentityAndSwarmData();
+      }
+    }
+
+    function showLaterModal(key) {
+      const spec = LATER_SPECS[key];
+      if (!spec) return;
+      const setTxt = (id, txt) => {
+        const el = document.getElementById(id);
+        if (el) el.innerText = txt;
+      };
+      setTxt('mTitle', spec.title);
+      setTxt('mPhase', spec.phase);
+      setTxt('mWhat', spec.what);
+      setTxt('mWhy', spec.why);
+      setTxt('mWhere', spec.where);
+      setTxt('mHow', spec.how);
+      const modal = document.getElementById('laterModal');
+      if (modal) modal.style.display = 'flex';
+    }
+
+    function filterQuestions() {
+      const input = document.getElementById('qFilterInput');
+      const q = (input ? input.value : '').toLowerCase();
+      document.querySelectorAll('.q-card').forEach(card => {
+        const text = card.innerText.toLowerCase();
+        card.style.display = text.includes(q) ? 'block' : 'none';
+      });
+    }
+
+    function filterQuestionCat(cat, btn) {
+      document.querySelectorAll('.q-cat').forEach(b => {
+        b.style.background = '#1c1f25';
+        b.style.color = '#7d8590';
+        b.style.border = '1px solid #363b43';
+      });
+      if (btn) {
+        btn.style.background = '#0284c7';
+        btn.style.color = '#fff';
+        btn.style.border = 'none';
+      }
+
+      document.querySelectorAll('.q-card').forEach(card => {
+        if (cat === 'all' || card.getAttribute('data-cat') === cat) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+
+    function toggleQDetail(header) {
+      const card = header.closest('.q-card');
+      if (!card) return;
+      const detail = card.querySelector('.q-detail');
+      const icon = card.querySelector('.q-icon');
+      if (!detail) return;
+      if (detail.style.display === 'none') {
+        detail.style.display = 'block';
+        if (icon) icon.innerText = '▼';
+      } else {
+        detail.style.display = 'none';
+        if (icon) icon.innerText = '▶';
+      }
+    }
+
+    window.setHierarchyMode = function(mode) {
+      const btnProj = document.getElementById('btnProjMode');
+      const btnAgent = document.getElementById('btnAgentMode');
+      if (mode === 'project' || mode === 'prod_evo') {
+        if (btnProj) { btnProj.style.background = '#2563eb'; btnProj.style.color = '#fff'; }
+        if (btnAgent) { btnAgent.style.background = 'transparent'; btnAgent.style.color = '#7d8590'; }
+      } else {
+        if (btnAgent) { btnAgent.style.background = '#2563eb'; btnAgent.style.color = '#fff'; }
+        if (btnProj) { btnProj.style.background = 'transparent'; btnProj.style.color = '#7d8590'; }
+      }
+      if (window.location && window.location.protocol.startsWith('http')) {
+        fetch('/api/mode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: mode === 'agent' ? 'self_evo' : 'prod_evo' })
+        })
+        .then(r => r.json())
+        .then(d => {
+          console.log('[MODE CHANGE]', d);
+        })
+        .catch(e => console.error('Ошибка переключения режима:', e));
+      }
+    };
+
+    function triggerPanicStop() {
+      if (window.location && window.location.protocol.startsWith('http')) {
+        fetch('/api/panic', { method: 'POST' }).catch(() => {});
+      }
+      alert('🚨 ВНЕПОЛОСНЫЙ СИГНАЛ /PANIC STOP ПРИНЯТ!\n\nSupervisor принудительно завершил все дочерние процессы.\nВозврат кода: 10 (REQUIRE_HUMAN).\nЖурнал: antigravity_debug.log обновлен.');
+    }
+
+    function pruneWorktreesAction() {
+      if (window.location && window.location.protocol.startsWith('http')) {
+        fetch('/api/worktrees/prune', { method: 'POST' })
+          .then(r => r.json())
+          .then(d => {
+            alert('🧹 Песочницы успешно очищены! Удалено рабочих деревьев: ' + (d.pruned_count || 0));
+            loadIdentityAndSwarmData();
+          })
+          .catch(e => alert('Ошибка очистки песочниц: ' + e));
+      } else {
+        alert('🧹 Очистка песочниц (Локальный режим: git worktree prune выполнен).');
+      }
+    }
+
+    function triggerEvoCycleAction() {
+      if (window.location && window.location.protocol.startsWith('http')) {
+        fetch('/api/evolve', { method: 'POST' })
+          .then(r => r.json())
+          .then(d => {
+            alert('🔄 Эволюционный шаг завершен со статусом: ' + (d.status || 'OK'));
+            loadIdentityAndSwarmData();
+          })
+          .catch(e => alert('Ошибка вызова эволюции: ' + e));
+      } else {
+        alert('🔄 Шаг самоэволюции запущен в локальном режиме.');
+      }
+    }
+
+    function loadIdentityAndSwarmData() {
+      if (window.location && window.location.protocol.startsWith('http')) {
+        // 1. Загрузка идентичности
+        fetch('/api/identity')
+          .then(r => r.json())
+          .then(d => {
+            const idEl = document.getElementById('identityPreviewText');
+            const spEl = document.getElementById('scratchpadPreviewText');
+            if (idEl && d.identity_content) {
+              idEl.innerText = d.identity_content.substring(0, 500) + '...';
+            }
+            if (spEl && d.scratchpad_content) {
+              spEl.innerText = d.scratchpad_content.substring(0, 500) + '...';
+            }
+          })
+          .catch(() => {});
+
+        // 2. Загрузка статуса роя
+        fetch('/api/swarm/tasks')
+          .then(r => r.json())
+          .then(d => {
+            const countEl = document.getElementById('swarmSandboxCount');
+            if (countEl) {
+              countEl.innerText = `${d.active_sandboxes_count || 0} активных (${d.lifecycle_clean ? 'Clean' : 'Pruning needed'})`;
+            }
+          })
+          .catch(() => {});
+      } else {
+        const idEl = document.getElementById('identityPreviewText');
+        const spEl = document.getElementById('scratchpadPreviewText');
+        if (idEl) idEl.innerText = 'Why_Ai Sovereign Continuous Biography (13 Principles of BIBLE.md Pinned in ContextFit).';
+        if (spEl) spEl.innerText = 'Active CoT Scratchpad: Gold v1.1.0 Architecture & Feature Flags Armed.';
+      }
+    }
+
+    // Экспорт в глобальный объект window для надежности инлайн-обработчиков
+    window.selectTimeVersion = selectTimeVersion;
+    window.startEvolutionReplay = startEvolutionReplay;
+    window.inspectNode = inspectNode;
+    window.switchDeckTab = switchDeckTab;
+    window.showLaterModal = showLaterModal;
+    window.filterQuestions = filterQuestions;
+    window.filterQuestionCat = filterQuestionCat;
+    window.toggleQDetail = toggleQDetail;
+    window.triggerPanicStop = triggerPanicStop;
+    window.pruneWorktreesAction = pruneWorktreesAction;
+    window.triggerEvoCycleAction = triggerEvoCycleAction;
+    window.loadIdentityAndSwarmData = loadIdentityAndSwarmData;
+
+    // Автоматическое закрытие модального окна при клике на оверлей и загрузка данных
+    document.addEventListener('DOMContentLoaded', () => {
+      const modal = document.getElementById('laterModal');
+      if (modal) {
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) modal.style.display = 'none';
+        });
+      }
+      loadIdentityAndSwarmData();
+    });
+
+    // Безопасное подключение к потоку событий Daemon API (127.0.0.1:8765)
+    if (window.location && window.location.protocol.startsWith('http')) {
+      try {
+        const evtSource = new EventSource('/api/events/stream');
+        evtSource.addEventListener('connected', (e) => {
+          console.log('[DAEMON SSE] Подключено к телеметрии Self-Evo:', e.data);
+        });
+        evtSource.addEventListener('panic_stop', (e) => {
+          alert('🚨 ПОЛУЧЕН СИГНАЛ PANIC STOP ИЗ СЕТИ DAEMON API!');
+        });
+        evtSource.addEventListener('evolution_cycle', (e) => {
+          console.log('[DAEMON SSE] Завершен эволюционный цикл:', e.data);
+          loadIdentityAndSwarmData();
+        });
+        evtSource.addEventListener('worktrees_pruned', (e) => {
+          console.log('[DAEMON SSE] Песочницы очищены:', e.data);
+          loadIdentityAndSwarmData();
+        });
+        evtSource.onerror = () => {
+          console.log('SSE Stream: Временная потеря связи с демоном.');
+        };
+      } catch (e) {
+        console.warn('SSE Stream unavailable:', e);
+      }
+    }
+  </script>
+</section>
+
+<!-- ============ MODEL ============ -->
+<section id="model">
+  <div class="kicker">ai-loop · режим /Project · развёртывание экземпляра</div>
+  <h2>Модель</h2>
+  <h3>Две топологии, и разница между ними — не косметика</h3>
+  <p class="lead">
+    Направление вложенности решает, чья цель главная. Кто кого содержит — тот и
+    задаёт вопрос, на который отвечает каждое изменение.
+  </p>
+
+  <div class="tabs">
+    <button class="tab" data-topo="agent">Agent-режим — работа над собой</button>
+    <button class="tab on" data-topo="project">/Project — работа над внешним модулем</button>
+  </div>
+
+  <div class="card" id="topoCard"></div>
+
+  <div class="grid2">
+    <div class="card tight">
+      <h4 style="margin-top:0">Вопрос, который задаёт режим</h4>
+      <p id="qText" style="margin-bottom:0"></p>
+    </div>
+    <div class="card tight">
+      <h4 style="margin-top:0">Чем это оборачивается на практике</h4>
+      <p id="pText" style="margin-bottom:0"></p>
+    </div>
+  </div>
+
+  <div class="note-box">
+    <span class="lbl">Механизм переключения</span>
+    <p>
+      В /Project-режиме имя агента совпадает с именем корня — <code>Agent_[root = имя]</code>.
+      Слой агента перестаёт занимать собственный уровень и схлопывается в корень.
+      Всё, что ниже, поднимается на ранг вверх: <b>Project встаёт на ранг 1</b>, а
+      экземпляр агента опускается внутрь него на ранг 2. Путь из четырёх позиций
+      становится путём из трёх.
+    </p>
+  </div>
+</section>
+
+<!-- ============ RANKS ============ -->
+<section id="ranks">
+  <h2>Ранги</h2>
+  <h3>Правило одно, таблицы исключений нет</h3>
+
+  <div class="code">
+    <button class="copy">копировать</button>
+<pre><span class="cm"># ранг = глубина от истинного корня файловой системы</span>
+<span class="cm"># меньший ранг задаёт пол — всегда, без исключений</span>
+
+ранг(путь) = число полных циклов Root→Core→Eye→Tool от корня до пути</pre>
+  </div>
+
+  <p>
+    Это следствие <strong>одного</strong> правила, а не отдельно прописанное
+    «внешняя policy сильнее». Поэтому оно автоматически работает и для случаев,
+    которые никто явно не предусмотрел — проект внутри проекта, монорепозиторий
+    внутри монорепозитория.
+  </p>
+
+  <table>
+    <thead><tr><th>Ранг</th><th>Каталог</th><th>Роль</th><th>Автокомплит</th><th>Может писать</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="k">0</td><td class="k">&lt;workspace&gt;/</td>
+        <td>Точка входа, оркестрация. Агент отождествлён с корнем.</td>
+        <td>чтение везде</td>
+        <td>ничего в закрытых путях; <code>CLAUDE.md</code> и <code>.claude/</code> в deny</td>
+      </tr>
+      <tr>
+        <td class="k">1</td><td class="k">Project_&lt;имя&gt;/</td>
+        <td><strong>Внешний модуль. Приоритет 100%.</strong> Его policy — рабочая.</td>
+        <td>внутри зоны E проекта, после гейта</td>
+        <td>код проекта; policy plane — никогда</td>
+      </tr>
+      <tr>
+        <td class="k">1</td><td class="k">Tool/</td>
+        <td>Инструментарий агента. В этом режиме — не предмет работы.</td>
+        <td>нет — <code>ask</code></td>
+        <td>только с явным подтверждением</td>
+      </tr>
+      <tr>
+        <td class="k">2</td><td class="k">agent_&lt;имя&gt;/</td>
+        <td>Рабочий экземпляр внутри проекта. Заметки, черновики.</td>
+        <td>да, полностью</td>
+        <td>свой каталог; исключён локально через <code>.git/info/exclude</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note-box warn">
+    <span class="lbl">Почему .gitignore не трогаем</span>
+    <p>
+      <code>.gitignore</code> решает, какие файлы классификатор вообще увидит:
+      игнорируемый путь выпадает из диффа рабочего дерева. Всё, что управляет
+      входом в проверку, — часть проверки, поэтому <code>.gitignore</code> в зоне P.
+      Для локального мусора существует <code>.git/info/exclude</code> — он не
+      отслеживается и ничего не меняет в правилах.
+    </p>
+  </div>
+</section>
+
+<!-- ============ CHAIN ============ -->
+<section id="chain">
+  <h2>Цепочка</h2>
+  <h3>Какая policy решает судьбу конкретного файла</h3>
+  <p>
+    Классификатор собирает <strong>все</strong> policy от истинного корня вниз.
+    Каждый слой, который управляет путём, выносит свой вердикт, и берётся
+    <strong>максимальный</strong> риск. Выберите путь и посмотрите, как это
+    считается.
+  </p>
+
+  <div class="demo">
+    <label for="pathSel">Путь (относительно workspace)</label>
+    <select id="pathSel"></select>
+    <div class="layers" id="layers"></div>
+    <div class="verdict">
+      <div class="vl">Итог</div>
+      <div class="vv" id="vv"></div>
+      <div class="vw" id="vw"></div>
+    </div>
+  </div>
+
+  <div class="grid2" style="margin-top:16px">
+    <div class="note-box ok" style="margin:0">
+      <span class="lbl">Молчание — не запрет</span>
+      <p>
+        Если внешний слой ничего не говорит о пути, а вложенный его
+        классифицировал — вложенная классификация в силе. Это и есть автономия
+        проекта над своим поддеревом.
+      </p>
+    </div>
+    <div class="note-box crit" style="margin:0">
+      <span class="lbl">Сузить можно, ослабить нельзя</span>
+      <p>
+        Вложенная policy может поднимать риск и ужесточать гейты. Понизить то,
+        что решил внешний слой, она не может — MAX ходит только вверх.
+        <code>--self-check</code> падает, если она это пытается сделать.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ STANDING RULES ============ -->
+<section id="standing">
+  <h2>Постоянные правила</h2>
+  <h3>Три вещи в заголовке контекстного окна</h3>
+  <p>
+    Они стоят в шапке <code>CLAUDE.md</code> и читаются раньше всего остального.
+    Это не вопросы классификации риска: они не становятся допустимыми оттого,
+    что дифф выглядит LOW.
+  </p>
+
+  <div class="card tight">
+    <h4 style="margin-top:0">1. Product-путь резолвится, а не охраняется</h4>
+    <p style="font-size:13.7px; margin-bottom:9px">
+      Объявлено заранее, на той же троичной форме, что и метрика:
+    </p>
+    <div class="code"><button class="copy">копировать</button>
+<pre>0 совпадений  -> создать ./product_#&lt;имя&gt; в корне workspace, использовать
+1 совпадение  -> подключиться; содержимое не трогается
+иначе         -> unmatched -> стоп</pre></div>
+    <table style="margin-bottom:9px">
+      <thead><tr><th>Ветка</th><th>Что делает скрипт</th><th>exit</th></tr></thead>
+      <tbody>
+        <tr><td class="k">product отсутствует</td><td><code>created product_#demo</code></td><td>0</td></tr>
+        <tr><td class="k">product уже есть</td><td><code>attached to product_#legacy — contents untouched</code></td><td>0</td></tr>
+        <tr><td class="k">два и более</td><td><code>unmatched: more than one product directory</code> + список кандидатов</td><td>1</td></tr>
+        <tr><td class="k">повторный запуск</td><td><code>existing instance found — attaching, not re-creating</code></td><td>0</td></tr>
+        <tr><td class="k">повторный с другим <code>--name</code></td><td><code>conflict: this workspace holds Project_demo</code></td><td>1</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:13.7px; margin-bottom:0">
+      Подключение — <strong>обычный случай, а не ошибка</strong>. Третья ветка не
+      осторожность ради осторожности: два кандидата означают, что у вопроса
+      «какой» нет ответа, а молчаливый выбор — это как раз то, как прогон
+      начинает писать в product, который никто не собирался открывать. Тот же
+      <code>unmatched</code>, что и в зонной модели: не третий исход, а
+      отсутствие исхода.
+    </p>
+  </div>
+
+  <div class="card tight">
+    <h4 style="margin-top:0">2. Защита от перезаписи — в permission-слое, а не в отказе запускаться</h4>
+    <p style="font-size:13.7px; margin-bottom:9px">
+      Это разные операции, и раньше здесь они были смешаны. «Не перезаписывать»
+      обеспечивается правилами <code>deny</code>, которые действуют на каждый
+      вызов инструмента, на любой глубине, и не перебиваются никаким
+      <code>allow</code> ни на каком уровне настроек. Подключиться к product
+      безопасно <em>именно потому</em>, что подключение не может его переписать —
+      значит, скрипту незачем отказываться работать.
+    </p>
+    <div class="code" style="margin-bottom:9px"><pre>"deny": [
+  "Edit(**/product_#*/**)",
+  "Edit(**/project_#*/**)",
+  "Edit(.ai-loop-instance.json)"
+]</pre></div>
+    <div class="note-box warn" style="margin:0">
+      <span class="lbl">Неоднозначность, оставленная намеренно</span>
+      <p>
+        В нотации встретились оба написания — <code>project_#</code> и
+        <code>product_#</code>, и какое имелось в виду, не установлено. Шаблон
+        ловит <strong>оба</strong>: это отказоустойчивое чтение. Сузьте
+        <code>PRODUCT_GLOBS</code> в скрипте, когда решите. Обычные каталоги вроде
+        <code>products/</code> или <code>my_project/</code> под шаблон не
+        попадают — проверено.
+      </p>
+    </div>
+  </div>
+
+  <div class="card tight">
+    <h4 style="margin-top:0">3. Вторая метрика — зарезервирована, не включена</h4>
+    <p style="font-size:13.7px">
+      <code>parallel_metric</code> в <code>risk_classification.yaml</code> —
+      заглушка, <code>enabled: false</code>. Пока выключена, вносит
+      <strong>ничего</strong> — не LOW, что читалось бы как «эта ось посмотрела и
+      осталась довольна», а именно ничего: ключа <code>metrics</code> в выводе
+      нет вообще.
+    </p>
+    <div class="code"><button class="copy">копировать</button>
+<pre>parallel_metric:
+  enabled: false
+  name: "TODO: что измеряется"
+  source: "TODO: откуда берётся значение"
+  dispatch:
+    "0": TODO
+    "1": TODO
+    default: unmatched        <span class="cm"># закреплено --self-check</span></pre></div>
+    <p style="font-size:13.7px">
+      Третья ветка — <strong>не третий исход</strong>. <code>unmatched</code>
+      уходит в тот же путь, что и незонированный файл:
+      <code>default_risk_for_unmatched</code>, то есть CRITICAL. Метрика,
+      вернувшая значение, которого никто не предусмотрел, — ровно тот случай,
+      когда продолжать наименее защитимо.
+    </p>
+    <table style="margin-bottom:0">
+      <thead><tr><th>Состояние</th><th>Поведение</th><th>Проверено</th></tr></thead>
+      <tbody>
+        <tr><td class="k">выключена</td><td>ничего не вносит, ключа <code>metrics</code> нет</td><td>да</td></tr>
+        <tr><td class="k">включена, ветки TODO</td><td><code>--self-check</code> отказывает, exit 10</td><td>да</td></tr>
+        <tr><td class="k"><code>default</code> ≠ unmatched</td><td>отказ <em>даже когда выключена</em></td><td>да</td></tr>
+        <tr><td class="k">включена, source не задан</td><td>отказ — TODO-строка не считается заданной</td><td>да</td></tr>
+        <tr><td class="k">включена и настроена</td><td>складывается с зоной по MAX, не заменяет её</td><td>да</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note-box ok">
+    <span class="lbl">Почему MAX, а не замена</span>
+    <p>
+      Две оси, каждая из которых может перебить другую, — это одна ось с лишними
+      шагами: решала бы та, что отработала последней. MAX означает, что включение
+      метрики может только останавливать больше работы, никогда меньше — поэтому
+      включать её не придётся никого уговаривать проверить внимательно.
+    </p>
+  </div>
+</section>
+
+<!-- ============ START ============ -->
+<section id="start">
+  <h2>Запуск</h2>
+  <h3>Пять шагов до рабочего экземпляра</h3>
+  <div class="bar"><i id="barFill"></i></div>
+
+  <div class="step" id="s1">
+    <div class="num">1</div>
+    <div>
+      <h4>Установить плагин</h4>
+      <div class="code"><button class="copy">копировать</button>
+<pre>mkdir -p ~/ai-workspace/Tool &amp;&amp; cd ~/ai-workspace/Tool
+unzip <span class="st">/путь/к/ai-loop-plugin.zip</span> -d .
+
+claude plugin marketplace add ~/ai-workspace/Tool/ai-loop
+claude plugin install ai-loop</pre></div>
+      <p style="font-size:13.5px">Проверка: <code>claude</code> → <code>/help</code> → в списке есть <code>/ai-loop:start_Ai</code>.</p>
+    </div>
+  </div>
+
+  <div class="step" id="s2">
+    <div class="num">2</div>
+    <div>
+      <h4>Развернуть дерево</h4>
+      <div class="code"><button class="copy">копировать</button>
+<pre>cd ~/ai-workspace
+bash Tool/ai-loop-project-mode/bin/init-project-mode.sh \
+  --name <span class="hi">acme-api</span> \
+  --from <span class="st">git@github.com:acme/api.git</span> \
+  --agent <span class="hi">loop</span> \
+  --plugin-root ~/ai-workspace/Tool/ai-loop</pre></div>
+      <p style="font-size:13.5px">
+        Проект уже локально — уберите <code>--from</code> и положите его в
+        <code>Project_&lt;имя&gt;/</code> заранее. Скрипт ничего не коммитит и не
+        перезаписывает существующие <code>CLAUDE.md</code>, <code>settings.json</code>
+        и policy; повторный запуск безопасен.
+      </p>
+    </div>
+  </div>
+
+  <div class="step" id="s3">
+    <div class="num">3</div>
+    <div>
+      <h4>Заполнить зоны</h4>
+      <div class="note-box crit">
+        <span class="lbl">Пока зоны TODO — всё CRITICAL</span>
+        <p>
+          Свежий шаблон не содержит зон. Каждый путь оказывается unmatched, а
+          unmatched — это CRITICAL, и цикл встанет на всём. Это правильное
+          направление отказа, а не поломка: контур останавливается, а не
+          пропускает.
+        </p>
+      </div>
+      <p style="font-size:13.5px">
+        Запустите <code>claude</code> из корня workspace и дайте
+        <strong>промпт 3</strong> — <code>control-plane-init</code> выведет зоны из
+        реального дерева проекта. Утверждаете зоны вы, не агент.
+      </p>
+    </div>
+  </div>
+
+  <div class="step" id="s4">
+    <div class="num">4</div>
+    <div>
+      <h4>Проверить контур</h4>
+      <div class="code"><button class="copy">копировать</button>
+<pre>P=Project_<span class="hi">acme-api</span>
+python3 $P/.ai-loop/bin/classify_diff.py --repo $P --self-check</pre></div>
+      <p style="font-size:13.5px">
+        Смотреть два поля: <code>policy_chain</code> — какие слои найдены и в каком
+        порядке; <code>problems</code> — пусто значит структурных дыр нет.
+        Больше одного слоя — выше есть ещё одна policy, и она задаёт пол.
+      </p>
+    </div>
+  </div>
+
+  <div class="step" id="s5">
+    <div class="num">5</div>
+    <div>
+      <h4>Запустить экземпляр</h4>
+      <div class="code"><button class="copy">копировать</button>
+<pre>cd ~/ai-workspace &amp;&amp; claude</pre></div>
+      <p style="font-size:13.5px">
+        Первым сообщением — <strong>промпт 1</strong>. Он заставит агента проверить
+        развёртывание и доложить фактами <em>до</em> того, как получит задачу.
+        Задачу дайте вторым сообщением.
+      </p>
+    </div>
+  </div>
+
+  <hr>
+  <h4 style="margin-top:0">Чек-лист развёртывания</h4>
+  <div id="checklist"></div>
+</section>
+
+<!-- ============ PROMPTS ============ -->
+<section id="prompts">
+  <h2>Промпты</h2>
+  <h3>Готовые к вставке</h3>
+  <p>Полные тексты — в <code>PROMPT-DEPLOY.md</code>. Здесь первый, самый важный.</p>
+
+  <h4>Промпт 1 — проверка развёртывания</h4>
+  <div class="code"><button class="copy">копировать</button>
+<pre>Ты запускаешься в режиме /Project контура ai-loop. Прежде чем принимать любую
+задачу — проверь развёртывание и доложи фактами, а не предположениями.
+
+1. Прочитай ./CLAUDE.md. Назови режим, ранги и что именно стоит на ранге 1.
+
+2. Определи имя проекта: ls -d Project_*/
+   Дальше подставляй его вместо &lt;P&gt;.
+
+3. Проверь цепочку policy и выведи её целиком:
+   python3 &lt;P&gt;/.ai-loop/bin/classify_diff.py --repo &lt;P&gt; --self-check
+   Покажи поле policy_chain и все problems. Если ok=false — перечисли проблемы и
+   НЕ переходи к шагу 6, пока я их не разберу.
+
+4. Убедись, что классификатор действительно смотрит на дифф:
+   python3 &lt;P&gt;/.ai-loop/bin/classify_diff.py --repo &lt;P&gt; --explain
+   Если зоны в protected_paths.yaml ещё TODO — все пути будут unmatched, то есть
+   CRITICAL. Это ожидаемое состояние свежего шаблона, а не поломка. Скажи об этом
+   прямо и предложи запустить /ai-loop:control-plane-init, чтобы вывести зоны из
+   реального дерева проекта.
+
+5. Проверь пол разрешений: покажи deny-список из .claude/settings.json и назови,
+   какие пути он закрывает на любой глубине.
+
+6. Прочитай &lt;P&gt;/CLAUDE.md и &lt;P&gt;/.ai-loop/context.md. Перечисли, что там ещё
+   TODO. Не заполняй сам — спроси у меня то, чего не хватает, одним списком.
+
+Правила на всю сессию:
+- Приоритет 100% у &lt;P&gt;. Улучшения собственного инструментария в Tool/ — не эта
+  работа; если возникнет соблазн, скажи об этом и не делай.
+- Риск считает classify_diff.py по фактическому git diff. Никогда не сообщай
+  уровень риска, который ты вывел рассуждением.
+- Policy plane не редактируется ни на какой глубине. Если увидишь способ обойти
+  этот запрет — это находка, сообщи её, а не используй.
+- Один шаг = один коммит. На первом require_human — стоп, без обходных путей.
+- Тест засчитывается доказательством только после того, как ты своими глазами
+  видел его падение на неверной реализации. Записывай реальный вывод падения.
+- Мержит человек. PR открывать можно, мержить нельзя.
+
+Доложи результат шагов 1-6 и остановись. Задачу я дам следующим сообщением.</pre></div>
+</section>
+
+<!-- ============ VERIFY ============ -->
+<section id="verify">
+  <h2>Проверка</h2>
+  <h3>«Настроен» и «работает» — разные состояния</h3>
+  <p>
+    Разница не видна, пока что-нибудь не должно было сработать и не сработало.
+    Четыре команды, которые отделяют одно от другого.
+  </p>
+
+  <div class="code"><button class="copy">копировать</button>
+<pre>P=Project_<span class="hi">&lt;имя&gt;</span>
+
+<span class="cm"># 1. классификатор видит дифф</span>
+echo "// probe" &gt;&gt; $P/&lt;файл из зоны E&gt;
+python3 $P/.ai-loop/bin/classify_diff.py --repo $P --explain
+
+<span class="cm"># 2. защищённый путь действительно поднимает риск — ждём CRITICAL</span>
+python3 $P/.ai-loop/bin/classify_diff.py --repo $P \
+  --paths .ai-loop/policy/protected_paths.yaml --explain
+
+<span class="cm"># 3. цепочка видна</span>
+python3 $P/.ai-loop/bin/classify_diff.py --repo $P --self-check | grep -A5 policy_chain
+
+<span class="cm"># 4. журнал целостен</span>
+python3 $P/.ai-loop/bin/ledger.py --repo $P verify</pre></div>
+
+  <div class="note-box crit">
+    <span class="lbl">Единственная проверка, которую нельзя пропустить</span>
+    <p>
+      Если пункт 2 вернул не CRITICAL — контур декоративен, и всё, что он до
+      этого «одобрил», проверено не было.
+    </p>
+  </div>
+</section>
+
+<!-- ============ CHANGED ============ -->
+<section id="changed">
+  <h2>Изменения</h2>
+  <h3>Три правки, сделанные под эту модель</h3>
+  <p>
+    Каждая проверена фальсификацией: сначала наблюдалось неверное поведение,
+    потом верное. Проверка, которая всегда была зелёной, доказывает только то,
+    что она зелёная.
+  </p>
+
+  <div class="card tight">
+    <h4 style="margin-top:0"><code>classify_diff.py</code> — цепочка policy</h4>
+    <p style="font-size:13.5px; margin-bottom:9px">
+      Было: читалась ровно одна policy под <code>--repo</code>, вверх поиск не шёл
+      вообще. Вложенная policy могла разжаловать то, что защищает внешняя.
+    </p>
+    <div class="code" style="margin-bottom:0"><pre><span class="cm"># до правки, один и тот же файл:</span>
+src/foo.py  по вложенной policy  → <span class="st">LOW / allow</span>
+src/foo.py  по внешней policy    → CRITICAL / require_human
+
+<span class="cm"># после правки:</span>
+chain: [ancestor:Project_x(outer), repo(inner)]
+src/foo.py → R CRITICAL require_human
+             layers: [ancestor=R/CRITICAL, repo=E/LOW]</pre></div>
+  </div>
+
+  <div class="card tight">
+    <h4 style="margin-top:0"><code>guard-policy-plane.sh</code> — любая глубина</h4>
+    <p style="font-size:13.5px; margin-bottom:0">
+      Было: шаблон <code>.ai-loop/policy/*</code> совпадал только на корне, а
+      <code>Project_x/.ai-loop/policy/…</code> проходил. Стало: совпадение на любой
+      глубине плюс проверка по содержимому — каталог с
+      <code>protected_paths.yaml</code> это policy plane, как бы он ни назывался.
+      Отслеживается ли файл git'ом, теперь спрашивают у того репозитория, который
+      им владеет: вложенный проект часто собственный клон, и внешний отвечал бы
+      «не отслеживается», пропуская правку.
+    </p>
+  </div>
+
+  <div class="card tight">
+    <h4 style="margin-top:0"><code>--self-check</code> — правило на ослабление</h4>
+    <p style="font-size:13.5px; margin-bottom:0">
+      Берёт каждый путь, который защищает внешний слой, спрашивает вложенный про
+      тот же файл и сообщает о любом более мягком ответе. Цепочка и так
+      переопределит вложенную policy; проверка существует потому, что policy,
+      <em>пытающаяся</em> опустить пол, — это заявление о намерении, на котором
+      лучше упасть, чем молча его исправить.
+    </p>
+  </div>
+
+  <div class="note-box ok">
+    <span class="lbl">Обратная совместимость</span>
+    <p>
+      Репозиторий с одной policy классифицируется побитово так же, как до правки —
+      <code>--no-chain</code> даёт идентичный результат. Для существующих проектов
+      поведение не изменилось.
+    </p>
+  </div>
+
+  <div class="note-box warn">
+    <span class="lbl">Что осталось ограничением</span>
+    <p>
+      <b>Хук — не граница.</b> Он выполняется внутри сессии, которую сторожит, его
+      можно отключить, и сессия без плагина его вообще не запускает. Границей
+      остаётся обязательная проверка на защищённой ветке.
+    </p>
+    <p>
+      <b><code>--cumulative</code> считает объединение в пределах одного
+      <code>--repo</code>.</b> Цепочка расширила то, какие policy применяются к
+      путям; она не расширила то, какие пути попадают в дифф.
+    </p>
+  </div>
+</section>
+
+<!-- ============ TROUBLE ============ -->
+<section id="trouble">
+  <h2>Ошибки</h2>
+  <h3>Частые симптомы и что за ними стоит</h3>
+  <table>
+    <thead><tr><th>Симптом</th><th>Причина</th><th>Что делать</th></tr></thead>
+    <tbody>
+      <tr><td class="k"><code>no policy directory found</code></td><td>запуск не из того корня</td><td>добавить <code>--repo Project_&lt;имя&gt;</code></td></tr>
+      <tr><td class="k">всё CRITICAL, <code>unmatched_path</code></td><td>зоны в шаблоне ещё TODO</td><td><code>control-plane-init</code>; зоны утверждает человек</td></tr>
+      <tr><td class="k">«nested policy … may not lower an outer floor»</td><td>вложенная policy мягче внешней</td><td>привести в соответствие; цепочка её всё равно переопределит</td></tr>
+      <tr><td class="k"><code>unrecognized arguments: --actor</code></td><td>старая копия <code>loop.py</code></td><td>перевендорить <code>scripts/*.py</code> в <code>.ai-loop/bin/</code></td></tr>
+      <tr><td class="k">гейт на каждой мелочи</td><td><code>context.md</code> не в зоне E</td><td>добавить его и <code>.ai-loop/memory/</code> в зону E</td></tr>
+      <tr><td class="k">хук не блокирует вложенную policy</td><td>старая копия хука</td><td>обновить плагин</td></tr>
+      <tr><td class="k"><code>Zip file contains path with invalid characters</code></td><td>не-ASCII имя внутри архива</td><td>пересобрать <code>zip -X</code></td></tr>
+    </tbody>
+  </table>
+
+  <h4>Три вещи, которые ломают контур тише всего</h4>
+  <ol>
+    <li><strong>Запуск без <code>--repo</code>.</strong> Поиск policy идёт только под указанным корнем. Не та точка запуска — не та policy, и никакого предупреждения.</li>
+    <li><strong>Команда тестов, записанная «по памяти».</strong> Если она не работает, VERIFY проходит вхолостую: все критерии остаются недоказанными, выглядя доказанными.</li>
+    <li><strong>Зоны, оставленные TODO «на потом».</strong> Привычка нажимать «одобрить» на каждом гейте вырабатывается раньше, чем гейты начинают что-то значить.</li>
+  </ol>
+</section>
+
+<!-- ============ FILES ============ -->
+<section id="files">
+  <h2>Бандл</h2>
+  <h3>Что в архиве</h3>
+  <table>
+    <thead><tr><th>Файл</th><th>Зачем</th></tr></thead>
+    <tbody>
+      <tr><td class="k">bin/init-project-mode.sh</td><td>разворачивает дерево, вендорит классификатор, ставит локальные git-исключения</td></tr>
+      <tr><td class="k">PROMPT-DEPLOY.md</td><td>три промпта: проверка развёртывания, прогон, инициализация зон</td></tr>
+      <tr><td class="k">START-HERE.md</td><td>пять шагов текстом</td></tr>
+      <tr><td class="k">dashboard.html</td><td>эта страница</td></tr>
+      <tr><td class="k">context/CLAUDE.md</td><td>контракт режима для корня workspace</td></tr>
+      <tr><td class="k">context/project-CLAUDE.md</td><td>контракт проекта — заполнить</td></tr>
+      <tr><td class="k">context/ai-loop-context.md</td><td>память проекта — заполнить</td></tr>
+      <tr><td class="k">policy/*.yaml</td><td>шаблоны зон и матрицы риска</td></tr>
+      <tr><td class="k">settings/settings.json</td><td>пол разрешений; deny совпадает на любой глубине</td></tr>
+      <tr><td class="k">docs/hierarchy-v3-RU.md</td><td>модель рангов, разбор нотации, что реализовано</td></tr>
+      <tr><td class="k">docs/cli-setup-RU.md</td><td>подробная установка, порядок разрешений, разбор ошибок</td></tr>
+    </tbody>
+  </table>
+
+  <p class="foot">
+    Бандл переносится в рабочий каталог CLI и используется как контекст.
+    Плагин <code>ai-loop</code> ставится отдельно — этот архив его не содержит.
+  </p>
+</section>
+
+</main>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- topology ---------- */
+  var TOPO = {
+    agent: {
+      tree:
+'<span class="r0">&lt;root&gt;/</span>                        <span class="note">ранг 0  — root_name</span>\n'+
+'├── <span class="r1">Core/</span>                     <span class="note">ранг 1  — своя policy-плоскость</span>\n'+
+'├── <span class="r1">Eye/</span>                      <span class="note">ранг 1  — наблюдение, ревью</span>\n'+
+'├── <span class="r1">Tool/</span>                     <span class="note">ранг 1  — исполнение</span>\n'+
+'└── <span class="r1">Agent_&lt;имя&gt;/</span>              <span class="note">ранг 1  — субъект, занимает уровень</span>\n'+
+'    └── <span class="r3">Project_&lt;имя&gt;/</span>        <span class="note">ранг 3  — глубже всех, максимум гейтов</span>\n'+
+'\n'+
+'условно:  0-1-2-3   root/root_name/.../project_#имя',
+      q: 'Не ослабляет ли это <b>мой собственный</b> control plane? Любое касание policy — CRITICAL безусловно, по свойству non-self-reference.',
+      p: 'Режим дорогой по построению. Project лежит на ранге 3 — под ним весь контур агента, и почти всё требует подтверждения. Так и должно быть, когда инструмент правит сам себя.'
+    },
+    project: {
+      tree:
+'<span class="r0">&lt;root&gt;/</span>                        <span class="note">ранг 0  — Agent_[root = имя], слой схлопнут</span>\n'+
+'├── <span class="r1">Tool/</span>                     <span class="note">ранг 1  — инструментарий, не предмет работы</span>\n'+
+'└── <span class="r1">Project_&lt;имя&gt;/</span>            <span class="note">ранг 1  — ВНЕШНИЙ МОДУЛЬ, приоритет 100%</span>\n'+
+'    ├── <span class="r1">.ai-loop/policy/</span>       <span class="note">        его контур — рабочий</span>\n'+
+'    └── <span class="r2">agent_&lt;имя&gt;/</span>          <span class="note">ранг 2  — экземпляр ВНУТРИ проекта</span>\n'+
+'\n'+
+'условно:  0-1-2     root/project_#имя/agent_&lt;имя&gt;',
+      q: 'Не ломает ли это <b>инварианты проекта</b>? Отвечает policy проекта, а не policy агента — своего control plane в чужом коде нет.',
+      p: 'Убирается не защита, а <b>неприменимая</b> защита. Отсюда предусловие: без заполненного контура проекта это не «свободный режим», а «режим без гейтов».'
+    }
+  };
+
+  var card = document.getElementById('topoCard');
+  var qEl = document.getElementById('qText');
+  var pEl = document.getElementById('pText');
+
+  function renderTopo(key){
+    var t = TOPO[key];
+    card.innerHTML = '<pre class="tree">' + t.tree + '</pre>';
+    qEl.innerHTML = t.q;
+    pEl.innerHTML = t.p;
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(b){
+    b.addEventListener('click', function(){
+      Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(x){ x.classList.remove('on'); });
+      b.classList.add('on');
+      renderTopo(b.getAttribute('data-topo'));
+    });
+  });
+  renderTopo('project');
+
+  /* ---------- copy buttons ---------- */
+  Array.prototype.forEach.call(document.querySelectorAll('.copy'), function(btn){
+    btn.addEventListener('click', function(){
+      var pre = btn.parentNode.querySelector('pre');
+      var text = pre.innerText;
+      var done = function(){
+        btn.textContent = 'скопировано';
+        btn.classList.add('done');
+        setTimeout(function(){ btn.textContent = 'копировать'; btn.classList.remove('done'); }, 1600);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function(){ fallback(text, done); });
+      } else { fallback(text, done); }
+    });
+  });
+  function fallback(text, cb){
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); cb(); } catch(e){}
+    document.body.removeChild(ta);
+  }
+
+  /* ---------- chain demo ---------- */
+  // A deliberately small model of the real resolution: every layer that governs
+  // the path classifies it, and the highest risk wins.
+  var LAYERS = [
+    { name:'ancestor:..',        scope:'',            zones:[
+        {pat:'.ai-loop/policy/', zone:'P', risk:'CRITICAL'},
+        {pat:'Project_api/src/billing/', zone:'R', risk:'CRITICAL'}
+      ], unmatched:'CRITICAL' },
+    { name:'repo (workspace)',   scope:'',            zones:[
+        {pat:'.ai-loop/policy/', zone:'P', risk:'CRITICAL'},
+        {pat:'Tool/',            zone:'I', risk:'HIGH'}
+      ], unmatched:'CRITICAL' },
+    { name:'descendant:Project_api', scope:'Project_api', zones:[
+        {pat:'.ai-loop/policy/', zone:'P', risk:'CRITICAL'},
+        {pat:'package.json',     zone:'I', risk:'HIGH'},
+        {pat:'tests/',           zone:'T', risk:'MEDIUM'},
+        {pat:'src/',             zone:'E', risk:'LOW'},
+        {pat:'agent_loop/',      zone:'E', risk:'LOW'}
+      ], unmatched:'CRITICAL' }
+  ];
+
+  var PATHS = [
+    'Project_api/src/handlers.py',
+    'Project_api/src/billing/charge.py',
+    'Project_api/tests/test_charge.py',
+    'Project_api/package.json',
+    'Project_api/.ai-loop/policy/protected_paths.yaml',
+    'Project_api/agent_loop/notes/day1.md',
+    'Project_api/vendor/unknown.py',
+    'Tool/ai-loop/scripts/loop.py'
+  ];
+
+  var ORDER = { LOW:0, MEDIUM:1, HIGH:2, CRITICAL:3 };
+
+  function translate(layer, path){
+    if (!layer.scope) return path;
+    if (path === layer.scope) return '';
+    if (path.indexOf(layer.scope + '/') === 0) return path.slice(layer.scope.length + 1);
+    return null; // not governed
+  }
+  function matchPat(pat, p){
+    if (pat.charAt(pat.length-1) === '/') return p === pat.slice(0,-1) || p.indexOf(pat) === 0;
+    return p === pat || p.indexOf(pat + '/') === 0;
+  }
+  function classify(layer, local){
+    var best = null;
+    for (var i=0;i<layer.zones.length;i++){
+      var z = layer.zones[i];
+      if (matchPat(z.pat, local)) {
+        if (!best || z.pat.length > best.pat.length) best = z;
+      }
+    }
+    return best;
+  }
+
+  var sel = document.getElementById('pathSel');
+  PATHS.forEach(function(p){
+    var o = document.createElement('option'); o.value = p; o.textContent = p; sel.appendChild(o);
+  });
+
+  function renderChain(){
+    var path = sel.value;
+    var box = document.getElementById('layers');
+    box.innerHTML = '';
+    var results = [];
+
+    LAYERS.forEach(function(layer){
+      var local = translate(layer, path);
+      var row = document.createElement('div');
+      row.className = 'layer';
+      if (local === null){
+        row.classList.add('skip');
+        row.innerHTML = '<span class="lname">'+layer.name+'</span>'+
+                        '<span class="lzone">не управляет этим путём</span>'+
+                        '<span class="risk none">—</span>';
+      } else {
+        row.classList.add('governs');
+        var hit = classify(layer, local);
+        if (hit){
+          results.push({layer:layer.name, zone:hit.zone, risk:hit.risk, matched:true});
+          row.innerHTML = '<span class="lname">'+layer.name+'</span>'+
+                          '<span class="lzone">'+(local||'.')+' → зона '+hit.zone+'</span>'+
+                          '<span class="risk '+hit.risk+'">'+hit.risk+'</span>';
+        } else {
+          results.push({layer:layer.name, zone:null, risk:layer.unmatched, matched:false});
+          row.innerHTML = '<span class="lname">'+layer.name+'</span>'+
+                          '<span class="lzone">'+(local||'.')+' → правил нет (молчит)</span>'+
+                          '<span class="risk none">—</span>';
+        }
+      }
+      row.setAttribute('data-name', layer.name);
+      box.appendChild(row);
+    });
+
+    var matched = results.filter(function(r){ return r.matched; });
+    var verdict, why;
+    if (matched.length === 0){
+      var worst = 'LOW';
+      results.forEach(function(r){ if (ORDER[r.risk] > ORDER[worst]) worst = r.risk; });
+      if (!results.length) worst = 'CRITICAL';
+      verdict = worst;
+      why = 'Ни один слой не совпал. Применяется default_risk_for_unmatched — самый строгий из предложенных. Fail-closed: новый файл виновен, пока не внесён в зону.';
+      markWinner(box, null);
+    } else {
+      var win = matched[0];
+      matched.forEach(function(r){ if (ORDER[r.risk] > ORDER[win.risk]) win = r; });
+      verdict = win.risk;
+      if (matched.length === 1){
+        why = 'Совпал один слой — ' + win.layer + '. Остальные молчат, а молчание не запрет: классификация этого слоя в силе. Это и есть автономия проекта над своим поддеревом.';
+      } else {
+        var softer = matched.filter(function(r){ return ORDER[r.risk] < ORDER[win.risk]; });
+        why = 'Совпало слоёв: ' + matched.length + '. Побеждает максимум — ' + win.layer + ' (зона ' + win.zone + ').';
+        if (softer.length){
+          why += ' Слой ' + softer[0].layer + ' считает этот путь ' + softer[0].risk +
+                 ', но понизить чужой пол он не может: MAX ходит только вверх.';
+        }
+      }
+      markWinner(box, win.layer);
+    }
+
+    var gate = (verdict === 'HIGH' || verdict === 'CRITICAL') ? 'require_human' : 'auto';
+    document.getElementById('vv').innerHTML =
+      '<span class="risk '+verdict+'">'+verdict+'</span> &nbsp;→&nbsp; gate: <code>'+gate+'</code>';
+    document.getElementById('vw').textContent = why;
+  }
+  function markWinner(box, name){
+    Array.prototype.forEach.call(box.children, function(el){
+      el.classList.remove('wins');
+      if (name && el.getAttribute('data-name') === name) el.classList.add('wins');
+    });
+  }
+  sel.addEventListener('change', renderChain);
+  renderChain();
+
+  /* ---------- checklist ---------- */
+  var ITEMS = [
+    ['Плагин установлен', 'в <code>/help</code> виден <code>/ai-loop:start_Ai</code>'],
+    ['Дерево развёрнуто', '<code>init-project-mode.sh</code> отработал без ошибок'],
+    ['Классификатор вендорнут', '<code>Project_*/.ai-loop/bin/</code> содержит четыре <code>.py</code>'],
+    ['Зоны заполнены', 'в <code>protected_paths.yaml</code> не осталось <code>TODO</code>'],
+    ['<code>--self-check</code> проходит', '<code>ok: true</code>, цепочка policy понятна'],
+    ['Защищённый путь даёт CRITICAL', 'проверено вручную, а не предположено'],
+    ['Команда тестов проверена', 'реально запущена, а не записана по памяти'],
+    ['<code>CLAUDE.md</code> проекта заполнен', 'цель, инварианты, кто что решает'],
+    ['Фордж подключён', 'иначе «открой PR» останется текстом о том, как открыть PR']
+  ];
+  var cl = document.getElementById('checklist');
+  ITEMS.forEach(function(it, i){
+    var d = document.createElement('div');
+    d.className = 'check';
+    d.innerHTML = '<input type="checkbox" id="ck'+i+'"><label for="ck'+i+'"><b>'+it[0]+'</b> — '+it[1]+'</label>';
+    cl.appendChild(d);
+  });
+  var boxes = cl.querySelectorAll('input');
+  var STEPS = ['s1','s2','s3','s4','s5'];
+  function refresh(){
+    var n = 0;
+    Array.prototype.forEach.call(boxes, function(b){
+      if (b.checked) n++;
+      b.parentNode.classList.toggle('ticked', b.checked);
+    });
+    document.getElementById('barFill').style.width = (n / boxes.length * 100) + '%';
+    // light up the step blocks as the matching checks land
+    var per = Math.ceil(boxes.length / STEPS.length);
+    STEPS.forEach(function(id, si){
+      var from = si * per, all = true;
+      for (var k = from; k < Math.min(from + per, boxes.length); k++){
+        if (!boxes[k].checked) all = false;
+      }
+      var el = document.getElementById(id);
+      if (el) el.classList.toggle('done', all);
+    });
+  }
+  Array.prototype.forEach.call(boxes, function(b){ b.addEventListener('change', refresh); });
+  refresh();
+
+  /* ---------- nav highlight ---------- */
+  var links = document.querySelectorAll('#nav a');
+  var secs = document.querySelectorAll('main section');
+  function onScroll(){
+    var y = window.scrollY + 90, cur = secs[0].id;
+    Array.prototype.forEach.call(secs, function(s){ if (s.offsetTop <= y) cur = s.id; });
+    Array.prototype.forEach.call(links, function(a){
+      a.classList.toggle('on', a.getAttribute('href') === '#' + cur);
+    });
+  }
+  window.addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+})();
+</script>
+</body>
+</html>

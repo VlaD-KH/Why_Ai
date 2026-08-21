@@ -1,0 +1,78 @@
+# ai-loop control plane — risk levels and what each one costs (Why_Ai)
+#
+# protected_paths.yaml answers "may an agent change this?".
+# This file answers "how much autonomy does changing it earn?".
+#
+# The two must agree. `classify_diff.py --self-check` fails the run when they
+# do not: a HIGH classification with an auto gate is a LOW policy wearing a
+# HIGH label.
+
+version: "1.0"
+levels: [LOW, MEDIUM, HIGH, CRITICAL]
+
+# Baseline risk implied by zone membership.
+zone_default_risk:
+  R: CRITICAL
+  P: CRITICAL
+  I: HIGH
+  T: MEDIUM
+  E: LOW
+
+# What each level permits. HIGH and CRITICAL must stay `require_human`;
+# --self-check refuses anything else.
+gate:
+  LOW: auto
+  MEDIUM: auto
+  HIGH: require_human
+  CRITICAL: require_human
+
+# Finer-grained overrides. A matrix entry may always RAISE risk. It may lower
+# risk only inside a zone whose autonomous_mutation is true — otherwise a
+# narrow entry could quietly unprotect a protected zone.
+matrix:
+  - path: "Tool/skills/"
+    risk: HIGH
+    autonomous_mutation: false
+    human_approval_required: true
+    reason: >
+      Physically zone E (docs-like), but these are engineering-skill
+      manifests (spec/plan/build/test/review/webperf/code-simplify/ship/
+      using-agent-skills) — prompt-like content. Changing them changes what
+      the loop does downstream without touching a line of code, the exact
+      case risk_classification.yaml's template warns to matrix-override
+      rather than trust to zone membership alone.
+
+  - path: "Tool/mcp_config.json"
+    risk: HIGH
+    autonomous_mutation: false
+    human_approval_required: true
+    reason: >
+      MCP server manifest: wires env-var-injected credentials
+      (GITHUB_TOKEN, DATABASE_URL, SLACK_BOT_TOKEN) to connector processes.
+      A silent edit here can point a connector at a different endpoint or
+      broaden what a token is used for without any code change.
+
+  - path: "why_ai_config.yaml"
+    risk: HIGH
+    autonomous_mutation: false
+    human_approval_required: true
+    reason: >
+      System configuration manifest; the pre-ai-loop policy this replaces
+      already flagged it as requiring human approval.
+
+# Conditions that raise the level computed from paths alone.
+escalations:
+  test_and_product_same_diff: 1
+  policy_plane_touched: CRITICAL
+  unmatched_path: CRITICAL
+  files_changed_over: {threshold: 25, bump: 1}
+  lines_changed_over: {threshold: 800, bump: 1}
+  cumulative_run_diff: true
+
+# Separation of powers. These are assertions about the project, checked by
+# control-plane-review, not settings the loop can flip.
+separation:
+  proposer_is_not_evaluator: true
+  evaluator_is_not_policy_editor: true
+  evaluator_is_deterministic: true
+  merge_authority: human

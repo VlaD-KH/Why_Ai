@@ -1450,10 +1450,39 @@ hr{border:none; border-top:1px solid var(--line); margin:34px 0}
     };
 
     function triggerPanicStop() {
-      if (window.location && window.location.protocol.startsWith('http')) {
-        fetch('/api/panic', { method: 'POST' }).catch(() => {});
+      // Результат определяется ФАКТИЧЕСКИМ кодом ответа, а не фактом отправки.
+      // Прежняя версия глушила любую ошибку через .catch(() => {}) и безусловно
+      // показывала «Supervisor завершил все процессы, код 10» — оператор уходил
+      // уверенным, что система остановлена, даже когда запрос не дошёл вовсе.
+      // Это нарушение Принципа 15 BIBLE (успех — только по проверенному ответу).
+      if (!(window.location && window.location.protocol.startsWith('http'))) {
+        alert('⚠️ Страница открыта не по HTTP — запрос отправить некуда.\n\nСистема НЕ остановлена.');
+        return;
       }
-      alert('🚨 ВНЕПОЛОСНЫЙ СИГНАЛ /PANIC STOP ПРИНЯТ!\n\nSupervisor принудительно завершил все дочерние процессы.\nВозврат кода: 10 (REQUIRE_HUMAN).\nЖурнал: antigravity_debug.log обновлен.');
+      if (!confirm('Отправить внеполосный сигнал /PANIC STOP?\n\nSupervisor завершит дочерние процессы и вернёт код 10.')) {
+        return;
+      }
+      fetch('/api/panic', { method: 'POST' })
+        .then(r => r.text().then(body => ({ ok: r.ok, status: r.status, statusText: r.statusText, body: body })))
+        .then(res => {
+          if (!res.ok) {
+            alert('❌ ОТКАЗ · HTTP ' + res.status + ' ' + (res.statusText || '') +
+                  '\n\nСистема НЕ остановлена.\n\nОстановите вручную:\n  python Supervisor/launcher.py --panic-stop\n\nОтвет сервера:\n' +
+                  (res.body || '(пусто)').slice(0, 300));
+            return;
+          }
+          if (res.body.indexOf('PANIC') === -1) {
+            alert('⚠️ НЕЯСНО · HTTP ' + res.status +
+                  '\n\nСервер ответил успехом, но тело ответа не подтверждает останов.\nСчитать систему остановленной нельзя — проверьте вручную.\n\nОтвет:\n' +
+                  (res.body || '(пусто)').slice(0, 300));
+            return;
+          }
+          alert('🚨 ОСТАНОВ ВЫПОЛНЕН · HTTP ' + res.status +
+                '\n\nSupervisor завершил дочерние процессы, код 10 (REQUIRE_HUMAN).\nЖурнал: antigravity_debug.log');
+        })
+        .catch(e => {
+          alert('❌ ОТКАЗ · ответа нет (' + e + ')\n\nСостояние системы НЕИЗВЕСТНО, останов НЕ подтверждён.\n\nОстановите вручную:\n  python Supervisor/launcher.py --panic-stop');
+        });
     }
 
     function pruneWorktreesAction() {

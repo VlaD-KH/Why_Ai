@@ -24,17 +24,20 @@ Why_Ai/
 │   └── Constitution/
 │       └── BIBLE.md                   # 13 Неизменяемых Конституционных Принципов
 │
-├── Core/                              # Zone E (Изменяемый контур задач и рантайм)
+├── Core/                              # Zone R (см. .ai-loop/policy/protected_paths.yaml)
 │   ├── server.py                      # Daemon Control Plane API (127.0.0.1:8765, REST & SSE)
 │   ├── ContextFit.py                  # Менеджер памяти на основе графа импортов (AST)
 │   ├── MetaOverPatch.py               # Анализ паттернов сбоев (failures.jsonl)
 │   ├── PolicyDriftVector.py           # Векторный дельта-анализ дрейфа политик
 │   ├── SummaryChunker.py              # Иерархический Summary-Augmented чанкер для RAG
+│   ├── dvpn/                          # Phase 4: dVPN/proxy-роутер — каркас построен,
+│   │                                  #   сетевого слоя нет (симулятор, см. roadmap.md §4)
 │   └── failures.jsonl                 # Структурированный реестр сбоев
 │
 ├── Tool/                              # Tool Layer (Инструменты и коннекторы)
-│   ├── mcp_server.py                  # FastMCP RPC Server (@mcp.tool)
+│   ├── mcp_server.py                  # FastMCP RPC Server (@mcp.tool, inputSchema по спецификации MCP)
 │   ├── mcp_config.json                # Манифест конфигурации MCP
+│   ├── connectors/                    # github, postgres, telegram, dvpn — без реального сетевого I/O
 │   └── skills/                        # 9 инженерных манифестов (spec, plan, build, test, review, webperf, code-simplify, ship, using-agent-skills)
 │
 ├── Eye/                               # Eye Layer (Интерфейс, телеметрия и мониторинг)
@@ -42,7 +45,8 @@ Why_Ai/
 │   ├── Dashboard.tsx                  # React 18 модульный компонент дашборда
 │   └── TelemetryDock.tsx              # Компонент телеметрии
 │
-├── tests/                             # Доказательное тестирование (32 юнит-теста)
+├── tests/                             # Доказательное тестирование (76 юнит-тестов на момент проверки;
+│                                      #   актуальное число — `python -m unittest discover -s tests -p "test_*.py"`)
 ├── docs/                              # Каноническая документация и ТЗ
 ├── run_mvp.py                         # Главный суверенный входной узел
 ├── run.ps1                            # PowerShell скрипт быстрого запуска

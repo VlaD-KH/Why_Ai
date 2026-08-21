@@ -1423,44 +1423,31 @@ hr{border:none; border-top:1px solid var(--line); margin:34px 0}
         detail.style.display = 'none';
         if (icon) icon.innerText = '▶';
       }
-    function setHierarchyMode(mode) {
+    }
+
+    window.setHierarchyMode = function(mode) {
       const btnProj = document.getElementById('btnProjMode');
       const btnAgent = document.getElementById('btnAgentMode');
-
       if (mode === 'project' || mode === 'prod_evo') {
-        if (btnProj) {
-          btnProj.style.background = '#2563eb';
-          btnProj.style.color = '#ffffff';
-        }
-        if (btnAgent) {
-          btnAgent.style.background = 'transparent';
-          btnAgent.style.color = '#7d8590';
-        }
+        if (btnProj) { btnProj.style.background = '#2563eb'; btnProj.style.color = '#fff'; }
+        if (btnAgent) { btnAgent.style.background = 'transparent'; btnAgent.style.color = '#7d8590'; }
       } else {
-        if (btnAgent) {
-          btnAgent.style.background = '#2563eb';
-          btnAgent.style.color = '#ffffff';
-        }
-        if (btnProj) {
-          btnProj.style.background = 'transparent';
-          btnProj.style.color = '#7d8590';
-        }
+        if (btnAgent) { btnAgent.style.background = '#2563eb'; btnAgent.style.color = '#fff'; }
+        if (btnProj) { btnProj.style.background = 'transparent'; btnProj.style.color = '#7d8590'; }
       }
-
       if (window.location && window.location.protocol.startsWith('http')) {
         fetch('/api/mode', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: mode === 'project' ? 'prod_evo' : 'self_evo' })
+          body: JSON.stringify({ mode: mode === 'agent' ? 'self_evo' : 'prod_evo' })
         })
         .then(r => r.json())
         .then(d => {
-          console.log('[DAEMON] Топологический режим переключен:', d);
+          console.log('[MODE CHANGE]', d);
         })
-        .catch(e => console.warn('Ошибка переключения режима:', e));
+        .catch(e => console.error('Ошибка переключения режима:', e));
       }
-    }
-    window.setHierarchyMode = setHierarchyMode;
+    };
 
     function triggerPanicStop() {
       if (window.location && window.location.protocol.startsWith('http')) {

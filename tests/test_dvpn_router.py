@@ -61,6 +61,29 @@ class TestDVPNRouterAndHealth(unittest.TestCase):
         self.assertEqual(node.status, NodeStatus.OFFLINE)
         self.assertEqual(node.quality_score, 99999.0)
 
+    def test_health_prober_offline_via_packet_loss_reachable(self):
+        """OFFLINE должен достигаться через потерю пакетов (>80%), а не только через таймауты.
+
+        Регрессия: условие `elif packet_loss_pct > 80.0` стояло после
+        `if packet_loss_pct > 30.0 or ...`, которое перехватывает любое
+        значение >30, включая всё, что >80 — ветка была недостижима.
+        """
+        offline_by_loss = self.prober.update_probe_metrics(
+            node_id="node-de-01",
+            latency_ms=20.0,
+            packet_loss_pct=85.0,
+        )
+        self.assertEqual(offline_by_loss.status, NodeStatus.OFFLINE)
+
+        # Промежуточное значение (>30, но <=80) обязано остаться DEGRADED,
+        # а не тоже перескакивать в OFFLINE.
+        degraded_only = self.prober.update_probe_metrics(
+            node_id="node-de-01",
+            latency_ms=20.0,
+            packet_loss_pct=50.0,
+        )
+        self.assertEqual(degraded_only.status, NodeStatus.DEGRADED)
+
     # --- Adaptive Router Engine Tests ---
     def test_router_connect_free_and_premium_tiers(self):
         """Проверка маршрутизации для тарифов Free и Premium."""

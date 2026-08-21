@@ -86,6 +86,51 @@ class TestDaemonServer(unittest.TestCase):
         self.assertEqual(data["mode"], "prod_evo")
         conn.close()
 
+    def _post_mode(self, payload: dict) -> tuple:
+        conn = http.client.HTTPConnection("127.0.0.1", TEST_PORT, timeout=3)
+        conn.request("POST", "/api/mode", body=json.dumps(payload).encode("utf-8"),
+                     headers={"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        status = resp.status
+        data = json.loads(resp.read().decode("utf-8"))
+        conn.close()
+        return status, data
+
+    def test_api_mode_switching_preserves_project_name(self):
+        """/api/mode не должен молча сбрасывать project_name на 'default_project'.
+
+        Регрессия: сервер вызывал orch.switch_mode(target_str) без второго
+        аргумента, из-за чего использовался жёсткий дефолт "default_project" и
+        любое переключение режима с дашборда переписывало реально
+        сконфигурированное имя проекта (например "vanguard").
+        """
+        state_file = Path(__file__).resolve().parent.parent / ".ai_workspace_state.json"
+        backup = state_file.read_text(encoding="utf-8") if state_file.exists() else None
+        self.addCleanup(lambda: state_file.write_text(backup, encoding="utf-8") if backup else None)
+
+        status, data = self._post_mode({"mode": "prod_evo", "project_name": "acme"})
+        self.assertEqual(status, 200)
+        self.assertEqual(data["result"]["project_name"], "acme")
+
+        # Повторное переключение БЕЗ project_name обязано сохранить "acme",
+        # а не тихо перезаписать его дефолтом.
+        status2, data2 = self._post_mode({"mode": "self_evo"})
+        self.assertEqual(status2, 200)
+        status3, data3 = self._post_mode({"mode": "prod_evo"})
+        self.assertEqual(status3, 200)
+        self.assertEqual(data3["result"]["project_name"], "acme")
+
+    def test_api_mode_switching_rejects_unknown_mode(self):
+        """Неизвестное значение mode должно отклоняться, а не тихо трактоваться как 'project'.
+
+        Регрессия: `"agent" if "self" in raw_mode.lower() or "agent" in raw_mode.lower()
+        else "project"` резолвило ЛЮБУЮ нераспознанную строку (в т.ч. опечатки и
+        заявленный в документации 'manual_override') в 'project' без предупреждения.
+        """
+        status, data = self._post_mode({"mode": "manual_override"})
+        self.assertEqual(status, 400)
+        self.assertIn("error", data)
+
     def test_api_sync_db(self):
         """Проверка синхронизации логов failures/ledger через POST /api/sync_db."""
         conn = http.client.HTTPConnection("127.0.0.1", TEST_PORT, timeout=3)

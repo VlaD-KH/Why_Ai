@@ -295,9 +295,28 @@ class ControlApiHandler(http.server.BaseHTTPRequestHandler):
                 body = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
                 params = json.loads(body) if body else {}
                 raw_mode = params.get("mode", "self_evo")
-                target_str = "agent" if "self" in raw_mode.lower() or "agent" in raw_mode.lower() else "project"
+                mode_l = raw_mode.lower()
                 orch = WorkspaceOrchestrator(workspace_root=ROOT_DIR)
-                res = orch.switch_mode(target_str)
+                if "self" in mode_l or "agent" in mode_l:
+                    target_str = "agent"
+                elif "prod" in mode_l or "project" in mode_l:
+                    target_str = "project"
+                else:
+                    # Раньше любая нераспознанная строка (опечатка, документированный,
+                    # но нереализованный "manual_override") молча резолвилась в
+                    # "project". Неизвестный режим отклоняется явно.
+                    self._send_json(400, {
+                        "error": f"Неизвестный режим '{raw_mode}'. Допустимы значения, "
+                                 "содержащие 'self'/'agent' (self_evo) или 'prod'/'project' (prod_evo)."
+                    })
+                    return
+                # project_name не передан клиентом -> сохранить уже сконфигурированное
+                # имя проекта, а не сбрасывать на жёсткий дефолт "default_project".
+                project_name = params.get("project_name")
+                if not project_name:
+                    current = orch.get_current_topology()
+                    project_name = current.get("project_name") or "default_project"
+                res = orch.switch_mode(target_str, project_name=project_name)
                 broadcast_event("mode_changed", {"mode": raw_mode, "result": res})
                 self._send_json(200, {"status": "MODE_CHANGED", "mode": raw_mode, "result": res})
                 return

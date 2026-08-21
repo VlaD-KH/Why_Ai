@@ -22,8 +22,12 @@ class TestFastMCPServer(unittest.TestCase):
         tools = self.server.list_tools()
         self.assertEqual(len(tools), 1)
         self.assertEqual(tools[0]["name"], "test_echo")
-        self.assertIn("msg", tools[0]["parameters"]["properties"])
-        self.assertIn("count", tools[0]["parameters"]["properties"])
+        # Ключ схемы называется inputSchema согласно спецификации MCP
+        # (tools/list). Прежнее имя "parameters" реальные MCP-клиенты не читают.
+        self.assertIn("msg", tools[0]["inputSchema"]["properties"])
+        self.assertIn("count", tools[0]["inputSchema"]["properties"])
+        self.assertEqual(tools[0]["inputSchema"]["properties"]["count"]["type"], "integer")
+        self.assertEqual(tools[0]["inputSchema"]["required"], ["msg"])
 
     def test_call_tool_execution(self):
         """Проверка вызова зарегистрированного инструмента."""

@@ -187,11 +187,14 @@ class HealthProber:
         if load_pct is not None:
             node.load_pct = load_pct
 
-        # Определение статуса
-        if packet_loss_pct > 30.0 or node.ema_latency_ms > 500.0:
-            node.status = NodeStatus.DEGRADED
-        elif packet_loss_pct > 80.0:
+        # Определение статуса. Порог OFFLINE проверяется ПЕРВЫМ: диапазон
+        # packet_loss_pct > 80.0 является подмножеством > 30.0, поэтому при
+        # обратном порядке (DEGRADED-условие первым) ветка OFFLINE была
+        # недостижима ни при каком значении.
+        if packet_loss_pct > 80.0:
             node.status = NodeStatus.OFFLINE
+        elif packet_loss_pct > 30.0 or node.ema_latency_ms > 500.0:
+            node.status = NodeStatus.DEGRADED
         else:
             node.status = NodeStatus.ONLINE
 

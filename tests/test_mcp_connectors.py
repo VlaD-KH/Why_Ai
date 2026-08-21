@@ -60,6 +60,30 @@ class TestMCPConnectors(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.postgres.execute_query("DROP TABLE users;", read_only=False)
 
+    def test_postgres_blocks_destructive_ddl_by_default(self):
+        """Деструктивный DDL блокируется и при read_only=True (значение по умолчанию).
+
+        Регрессия: проверка стояла под `if not read_only`, поэтому путь по
+        умолчанию — единственный, которым реально ходит MCP-инструмент
+        postgres_execute_query, — оставался незащищённым.
+        """
+        for stmt in ("DROP TABLE users;", "TRUNCATE users;", "DELETE FROM users;"):
+            with self.subTest(stmt=stmt):
+                with self.assertRaises(PermissionError):
+                    self.postgres.execute_query(stmt)
+
+    def test_postgres_ddl_guard_ignores_whitespace_and_case(self):
+        """Обход через регистр и лишние пробелы не должен проходить."""
+        for stmt in ("drop   table users;", "Drop\tTable users;", "  DROP  TABLE users;"):
+            with self.subTest(stmt=stmt):
+                with self.assertRaises(PermissionError):
+                    self.postgres.execute_query(stmt)
+
+    def test_postgres_allows_plain_select(self):
+        """Защита не должна ломать легитимный SELECT."""
+        res = self.postgres.execute_query("SELECT * FROM nodes WHERE tier = 'premium';")
+        self.assertEqual(res["status"], "SUCCESS")
+
     def test_postgres_inspect_schema(self):
         schema = self.postgres.inspect_schema("nodes")
         self.assertEqual(schema["status"], "SCHEMA_INSPECTED")

@@ -9,6 +9,7 @@
 import hashlib
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -35,12 +36,31 @@ class PostgresConnector:
         Безопасное выполнение SQL-запроса.
         Проверяет запрет на несанкционированные DDL операции.
         """
-        clean_q = query.strip().upper()
-        if not read_only:
-            forbidden_keywords = ("DROP ", "TRUNCATE ", "ALTER DATABASE", "DROP TABLE")
-            for kw in forbidden_keywords:
+        # Нормализация до проверки: без неё "DROP  TABLE" и "Drop\tTable"
+        # проходили мимо посимвольного сравнения с литералом "DROP TABLE".
+        clean_q = re.sub(r"\s+", " ", query.strip().upper())
+
+        # Уровень 1 — деструктивные операции. Блокируются ВСЕГДА, независимо от
+        # read_only. Раньше эта проверка стояла под `if not read_only`, из-за чего
+        # значение по умолчанию (read_only=True) — единственный путь, которым
+        # реально ходит MCP-инструмент postgres_execute_query, — был не защищён:
+        # execute_query("DROP TABLE users;") возвращал SUCCESS.
+        # Такие операции требуют человека, а не флага в аргументах.
+        for kw in ("DROP ", "TRUNCATE ", "ALTER DATABASE", "ALTER TABLE",
+                   "DELETE ", "GRANT ", "REVOKE "):
+            if kw in clean_q:
+                raise PermissionError(
+                    f"Деструктивная команда '{kw.strip()}' заблокирована политикой безопасности FastMCP!"
+                )
+
+        # Уровень 2 — операции записи. Допустимы только при явном read_only=False.
+        if read_only:
+            for kw in ("INSERT ", "UPDATE ", "CREATE ", "MERGE ", "REPLACE "):
                 if kw in clean_q:
-                    raise PermissionError(f"Деструктивная DDL-команда '{kw.strip()}' заблокирована политикой безопасности FastMCP!")
+                    raise PermissionError(
+                        f"Операция записи '{kw.strip()}' запрещена в режиме read_only; "
+                        "передайте read_only=False осознанно."
+                    )
 
         query_hash = hashlib.sha256(query.encode("utf-8")).hexdigest()[:12]
         logger.info(f"Выполнен SQL-запрос [Hash: {query_hash}, ReadOnly: {read_only}]")

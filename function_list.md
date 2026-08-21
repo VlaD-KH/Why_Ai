@@ -173,6 +173,19 @@ python Core/MetaOverPatch.py --generate-refactor-plan
 
 ---
 
+### 2.5. `Core/dvpn/` — Phase 4, dVPN/Proxy-роутер (каркас; сетевого слоя нет)
+
+Не имеет собственного CLI — поверхность вызова только импорт классов и MCP-инструменты (см. §3.2). Классы:
+
+- `profiles.py` — `UserTier`, `TierPolicy`, `TierManager` (тарифы, квоты, контроль доступа).
+- `protocols.py` — `WireGuardConfig`, `VLESSConfig`, `ShadowsocksConfig`, `TrojanConfig`, `ProtocolFactory`.
+- `health_prober.py` — `HealthProber` (EMA-сглаживание, статусы `ONLINE`/`DEGRADED`/`OFFLINE`).
+- `engine.py` — `AdaptiveDVPNRouter` (выбор узла, Fail-Safe Fallback).
+
+⚠️ Пул узлов захардкожен (5 записей), сетевого пробинга и реального поднятия тоннелей нет — см. `roadmap.md` §Phase 4 для полного списка ограничений.
+
+---
+
 ## 3. Tool & FastMCP Server Interfaces
 
 ### 3.1. `Tool/mcp_server.py`
@@ -187,6 +200,16 @@ python Tool/mcp_server.py --call-tool github_create_draft_pr --args '{"title": "
 
 # Запуск в режиме стандартного потока stdio для IDE/агентов
 python Tool/mcp_server.py --serve-stdio
+```
+
+---
+
+### 3.2. `Tool/connectors/dvpn_connector.py` — MCP-инструменты dVPN
+
+Зарегистрированы в `Tool/mcp_server.py` (`dvpn_get_status`, `dvpn_list_nodes`, `dvpn_connect_node`, `dvpn_switch_tier_profile`, `dvpn_trigger_fallback`, `dvpn_get_client_config`). Честный проброс к `Core/dvpn/` без собственных заглушек — но `Core/dvpn/` сам по себе детерминированный симулятор (см. §2.5).
+
+```bash
+python Tool/mcp_server.py --call-tool dvpn_list_nodes --args '{"tier": "premium"}'
 ```
 
 ---

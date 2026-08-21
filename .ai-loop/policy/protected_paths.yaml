@@ -19,9 +19,9 @@
 version: "1.0"
 generated_by: "ai-loop/control-plane-init"
 generated_at: "2026-08-21T03:33:39Z"
-reviewed_by: "TODO: human name — the loop may not fill this in"
-reviewed_at: "TODO: ISO-8601 timestamp"
-baseline_commit: "TODO: commit hash of the commit that introduced this file"
+reviewed_by: "VlaD-KH <vladhrapko@gmail.com>"
+reviewed_at: "2026-08-21T14:02:15Z"
+baseline_commit: "9a35f19"  # коммит, которым этот файл впервые попал в репозиторий
 
 enforcement:
   diff_is_authoritative: true

@@ -85,6 +85,20 @@
     "tests/test_dvpn_profiles.py": 3888,
     "tests/test_dvpn_protocols.py": 3336,
     "tests/test_dvpn_router.py": 6607,
-    "Tool/connectors/dvpn_connector.py": 5428
+    "Tool/connectors/dvpn_connector.py": 5428,
+    "CLAUDE.md": 3779,
+    "docs/(Telegram Connector)__ в архитектурный каркас __Why_Ai v1.1.0-Gold__.md": 16035,
+    "docs/implementation_plan_v8.md": 8963,
+    "docs/MASTER PROMPT_ Telegram Mini App & FastMCP Bot Integration.md": 5990,
+    "docs/master-prompt_TgUi.md": 3456,
+    "docs/walkthrough_v8.md": 5916,
+    "docs/Небольшое уточнение__---_1) _Why_Ai_.ai-loop_polic.md": 11663,
+    "docs/Оценка. Проверка готовности и инструкция для польз.md": 8633,
+    "docs/final_vision/01-audit.md": 17744,
+    "docs/final_vision/02-architecture.md": 13071,
+    "docs/final_vision/03-roadmap.md": 10053,
+    "docs/final_vision/04-todo.md": 11354,
+    "docs/final_vision/05-risks.md": 12553,
+    "docs/final_vision/README.md": 6644
   }
 }

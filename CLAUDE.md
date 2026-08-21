@@ -50,3 +50,15 @@ python -m unittest discover -s tests -p "test_*.py"
 python .ai-loop/bin/classify_diff.py --repo . --self-check
 
 ```
+
+
+----- ---21.08.26_07:16\v_0.1.1--- -----
+
+## Дополнительно — перерегистрация MCP в правильный scope (сейчас он привязан к `_Ai` и из `Why_Ai` не виден). Выполнять **из каталога `Why_Ai`**:
+
+```bash
+claude mcp remove why-ai-mcp -s local
+
+```
+
+claude mcp add why-ai-mcp -e PYTHONIOENCODING=utf-8 -- python C:/Users/Huawei/source/_Ai/Why_Ai/Tool/mcp_server.py --serve-stdio

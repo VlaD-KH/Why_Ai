@@ -16,6 +16,19 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
+# Вывод супервизора (справка argparse, логи, JSON статуса) содержит кириллицу.
+# Консоль Windows по умолчанию отдаёт cp1250/cp866, и любая запись падает с
+# UnicodeEncodeError — из-за чего `launcher.py --help` завершался кодом 1 ещё
+# до разбора аргументов. Внеполосный рубильник обязан работать в той консоли,
+# которая есть у оператора, а не только под PYTHONIOENCODING=utf-8.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError, OSError):
+        # Поток подменён (например, перехвачен тестом) или не поддерживает
+        # reconfigure — это не повод ронять супервизор.
+        pass
+
 # Настройка логирования в корневой файл отладки
 LOG_FILE = Path("antigravity_debug.log")
 logging.basicConfig(

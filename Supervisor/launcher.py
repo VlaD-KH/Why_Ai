@@ -118,9 +118,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Supervisor Process Lifecycle & Panic Controller")
     parser.add_argument("--start", action="store_true", help="Запуск агента в фоновом процессе")
     parser.add_argument("--panic-stop", action="store_true", help="Экстренная внеполосная остановка всех процессов")
-    parser.add_argument("--reason", type="str", default="CLI trigger", help="Причина экстренной остановки")
+    parser.add_argument("--reason", type=str, default="CLI trigger", help="Причина экстренной остановки")
     parser.add_argument("--status", action="store_true", help="Диагностический статус супервизора")
-    parser.add_argument("--mode", type="str", default="project", choices=["project", "agent"], help="Режим иерархии")
+    parser.add_argument("--mode", type=str, default="project", choices=["project", "agent"], help="Режим иерархии")
 
     args = parser.parse_args()
     launcher = SupervisorLauncher()

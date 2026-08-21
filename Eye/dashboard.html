@@ -1462,26 +1462,55 @@ hr{border:none; border-top:1px solid var(--line); margin:34px 0}
       if (!confirm('Отправить внеполосный сигнал /PANIC STOP?\n\nSupervisor завершит дочерние процессы и вернёт код 10.')) {
         return;
       }
-      fetch('/api/panic', { method: 'POST' })
-        .then(r => r.text().then(body => ({ ok: r.ok, status: r.status, statusText: r.statusText, body: body })))
-        .then(res => {
+      var MANUAL = '\n\nОстановите вручную:\n  python Supervisor/launcher.py --panic-stop';
+      var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      // У fetch нет собственного таймаута: без AbortController «нет ответа»
+      // выглядело бы как бесконечное ожидание, а не как отказ.
+      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 10000) : null;
+
+      fetch('/api/panic', { method: 'POST', signal: ctrl ? ctrl.signal : undefined })
+        .then(function (r) {
+          return r.text().then(function (body) {
+            return { ok: r.ok, status: r.status, statusText: r.statusText, body: body };
+          });
+        })
+        .then(function (res) {
+          if (timer) clearTimeout(timer);
+          var tail = '\n\nОтвет сервера:\n' + (res.body || '(пусто)').slice(0, 300);
+
           if (!res.ok) {
             alert('❌ ОТКАЗ · HTTP ' + res.status + ' ' + (res.statusText || '') +
-                  '\n\nСистема НЕ остановлена.\n\nОстановите вручную:\n  python Supervisor/launcher.py --panic-stop\n\nОтвет сервера:\n' +
-                  (res.body || '(пусто)').slice(0, 300));
+                  '\n\nСистема НЕ остановлена.' + MANUAL + tail);
             return;
           }
-          if (res.body.indexOf('PANIC') === -1) {
+
+          // Успешный код ответа сам по себе ничего не подтверждает: контракт
+          // Core/server.py:272 — это {"status":"PANIC_STOPPED","exit_code":N}.
+          // Проверяется именно поле. Подстрочный поиск «PANIC» пропустил бы
+          // тело вида {"error":"PANIC endpoint unavailable"} как успех.
+          var data = null;
+          try { data = JSON.parse(res.body); } catch (e) { data = null; }
+
+          if (!data || typeof data !== 'object' || data.error || data.status !== 'PANIC_STOPPED') {
             alert('⚠️ НЕЯСНО · HTTP ' + res.status +
-                  '\n\nСервер ответил успехом, но тело ответа не подтверждает останов.\nСчитать систему остановленной нельзя — проверьте вручную.\n\nОтвет:\n' +
-                  (res.body || '(пусто)').slice(0, 300));
+                  '\n\nКод ответа успешный, но тело не подтверждает останов' +
+                  ' (ожидалось status="PANIC_STOPPED").\nСчитать систему остановленной нельзя — проверьте вручную.' +
+                  MANUAL + tail);
             return;
           }
+
           alert('🚨 ОСТАНОВ ВЫПОЛНЕН · HTTP ' + res.status +
-                '\n\nSupervisor завершил дочерние процессы, код 10 (REQUIRE_HUMAN).\nЖурнал: antigravity_debug.log');
+                '\n\nSupervisor завершил дочерние процессы.\nexit_code: ' +
+                (data.exit_code != null ? data.exit_code : '(не сообщён)') +
+                '\nЖурнал: antigravity_debug.log');
         })
-        .catch(e => {
-          alert('❌ ОТКАЗ · ответа нет (' + e + ')\n\nСостояние системы НЕИЗВЕСТНО, останов НЕ подтверждён.\n\nОстановите вручную:\n  python Supervisor/launcher.py --panic-stop');
+        .catch(function (e) {
+          if (timer) clearTimeout(timer);
+          var why = (e && e.name === 'AbortError')
+            ? 'сервер не ответил за 10 с'
+            : 'ответа нет (' + e + ')';
+          alert('❌ ОТКАЗ · ' + why +
+                '\n\nСостояние системы НЕИЗВЕСТНО, останов НЕ подтверждён.' + MANUAL);
         });
     }
 

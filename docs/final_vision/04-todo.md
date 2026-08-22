@@ -155,6 +155,25 @@
 - *Критерий:* `Core/server.py` и `why_ai_config.yaml` указывают на фактический
   путь `Core/failures.jsonl`; сейчас оба читают `ROOT_DIR/"failures.jsonl"`.
 
+### TASK-TG-07b (найдено при реализации TG-07/08, не начато): файловые источники алертов
+**Файл:** `Tool/connectors/telegram_bridge.py` · **Зона R · CRITICAL**
+**Класс:** 🔴 сложная/последовательная — три разных источника, разная семантика опроса
+
+Мост (TASK-TG-07/08) подписан на `GET /api/events/stream` и умеет фильтровать
+по серьёзности, но реально через SSE вещается только `panic_stop` (→ `crit`).
+Из четырёх уровней старой спецификации (`PANIC`/`CRITICAL`/`CONSENSUS`/`SIZE_WARN`)
+три остаются неподключёнными:
+
+- *Критерий:* `CRITICAL` (падение тестов) — источник `Core/failures.jsonl`,
+  опрос/tail файла, не SSE.
+- *Критерий:* `CONSENSUS` (вето кворума) — возвращаемое значение
+  `QuorumReviewer.review_diff()`, вызывать снаружи, не встраивать в
+  `Supervisor/`.
+- *Критерий:* `SIZE_WARN` (храповики) — `antigravity_debug.log`
+  (`launcher.py` пишет туда через `FileHandler`), tail лога.
+- *Анти-критерий:* ни один из трёх не подключать через правку `Supervisor/`
+  — тот же принцип, что уже действует для `panic_stop` (docs/final_vision/02-architecture.md).
+
 ---
 
 ## Фаза 3 — Mini App *(после решения по HTTPS)*

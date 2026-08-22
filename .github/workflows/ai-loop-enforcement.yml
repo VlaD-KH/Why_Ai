@@ -59,12 +59,20 @@ jobs:
       - name: Classify the actual diff
         id: classify
         run: |
-          set +e
+          set -euo pipefail
           BASE="origin/${{ github.event.pull_request.base.ref }}"
+          EXIT_CODE=0
           python3 .ai-loop/bin/classify_diff.py \
             --range "$BASE...HEAD" \
-            --phase CI > classification.json
-          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+            --phase CI > classification.json || EXIT_CODE=$?
+          
+          # classify_diff.py exits with code 10 on CRITICAL risk — this is not an error.
+          # Allow the exit code through so fail-closed checks can verify it explicitly.
+          if [ "$EXIT_CODE" -ne 0 ] && [ "$EXIT_CODE" -ne 10 ]; then
+            exit "$EXIT_CODE"
+          fi
+          
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
           cat classification.json
           {
             echo 'result<<CLASSIFICATION'

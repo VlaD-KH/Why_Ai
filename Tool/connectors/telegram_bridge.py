@@ -335,13 +335,13 @@ def dispatch_action(
     отказе транспорта или не-2xx статусе оператор получает явное
     предупреждение, что действие могло не выполниться.
     """
-    opener = opener or _default_post
     action = action_result.get("action")
     base = backend_base_url.rstrip("/")
 
     if action == "TRIGGER_PANIC":
+        call = opener or _default_post
         try:
-            status, _body = opener(f"{base}/api/panic", 10.0)
+            status, _body = call(f"{base}/api/panic", 10.0)
         except Exception as exc:  # noqa: BLE001
             return (
                 f"⚠️ /panic НЕ подтверждён: сбой транспорта ({exc.__class__.__name__}). "
@@ -355,8 +355,9 @@ def dispatch_action(
         return "🚨 /panic подтверждён бэкендом. Supervisor остановил процессы (Exit Code 10)."
 
     if action == "GET_STATUS":
+        call = opener or _default_get
         try:
-            status, body = opener(f"{base}/api/status", 10.0)
+            status, body = call(f"{base}/api/status", 10.0)
         except Exception as exc:  # noqa: BLE001
             return f"⚠️ Не удалось получить статус: сбой транспорта ({exc.__class__.__name__})."
         if not (200 <= status < 300):

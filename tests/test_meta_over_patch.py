@@ -27,6 +27,14 @@ class TestMetaOverPatch(unittest.TestCase):
         self.assertIn("title", plan)
         self.assertIn("steps", plan)
 
+    def test_plan_carries_the_failure_binding_signal(self):
+        """План обязан нести привязку к сбоям, а не выбрасывать её (Принцип 12)."""
+        analysis = self.engine.analyze_patterns()
+        plan = self.engine.generate_refactor_plan()
+        self.assertEqual(plan["total_failures"], analysis["total_failures_recorded"])
+        self.assertEqual(plan["patterns"], analysis["meta_refactor_candidates"])
+        self.assertEqual(len(plan["steps"]), len(analysis["meta_refactor_candidates"]))
+
 
 if __name__ == "__main__":
     unittest.main()

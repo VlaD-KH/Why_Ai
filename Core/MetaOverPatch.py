@@ -96,6 +96,13 @@ class MetaOverPatchEngine:
             "title": "Experience-Driven Architectural Refactor Plan",
             "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "steps": plan_steps,
+            # Сигнал, который эта функция вычисляет (analyze_patterns), но
+            # раньше не возвращала: IdempotencyGate читает именно эти два
+            # поля (Принцип 12 — привязка к реальным сбоям), и без них видел
+            # нули при трёх реально зафиксированных сбоях — план всегда
+            # отклонялся, кроме как через --force.
+            "total_failures": analysis["total_failures_recorded"],
+            "patterns": analysis["meta_refactor_candidates"],
         }
 
 

@@ -7,12 +7,13 @@
 """
 
 import argparse
+import datetime
 import json
 import logging
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] [RATCHETS] %(message)s")
 logger = logging.getLogger("SizeRatchets")
@@ -28,14 +29,26 @@ class SizeRatchetsManager:
     def __init__(self, workspace_root: Optional[Path] = None) -> None:
         self.workspace_root = (workspace_root or Path.cwd()).resolve()
         self.registry_file = self.workspace_root / RATCHET_REGISTRY
-        self.limits: Dict[str, int] = self._load_limits()
+        self._registry_rel = str(RATCHET_REGISTRY).replace("\\", "/")
+        data = self._load_registry()
+        self.limits: Dict[str, int] = data.get("limits", {})
+        self.rebaselines: List[Dict[str, Any]] = data.get("rebaselines", [])
 
-    def _load_limits(self) -> Dict[str, int]:
-        """Загрузка зарегистрированных верхних лимитов файлов."""
+    @staticmethod
+    def _normalize(rel_path: str) -> str:
+        """Нормализация пути. НЕ `lstrip('./')`: то была посимвольная зачистка
+        набора символов, из-за которой '.github/x.yml' превращался в
+        'github/x.yml' — ведущая точка воспринималась как мусор наравне со
+        слешем. Здесь снимается только буквальный префикс './', один раз."""
+        p = rel_path.replace("\\", "/")
+        if p.startswith("./"):
+            p = p[2:]
+        return p
+
+    def _load_registry(self) -> Dict[str, Any]:
         if self.registry_file.exists():
             try:
-                data = json.loads(self.registry_file.read_text(encoding="utf-8"))
-                return data.get("limits", {})
+                return json.loads(self.registry_file.read_text(encoding="utf-8"))
             except Exception as e:
                 logger.warning(f"Ошибка загрузки реестра храповиков: {e}")
         return {}
@@ -46,6 +59,7 @@ class SizeRatchetsManager:
             "schema": "ai-loop/size-ratchets/v1",
             "principle": "shrink-only",
             "limits": self.limits,
+            "rebaselines": self.rebaselines,
         }
         self.registry_file.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -56,29 +70,39 @@ class SizeRatchetsManager:
             dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("venv", "node_modules", "__pycache__", "worktrees")]
             for file in files:
                 ext = os.path.splitext(file)[1].lower()
-                if ext in (".py", ".ts", ".tsx", ".js", ".jsx", ".md", ".json", ".yaml", ".sh"):
-                    full_path = Path(root) / file
-                    rel_path = str(full_path.relative_to(self.workspace_root)).replace("\\", "/")
-                    size = full_path.stat().st_size
-                    # Если файл уже в реестре, обновляем только если размер уменьшился (shrink-only)
-                    if rel_path in self.limits:
-                        if size < self.limits[rel_path]:
-                            logger.info(f"Храповик понижен для {rel_path}: {self.limits[rel_path]} -> {size} байт")
-                            self.limits[rel_path] = size
-                    else:
+                if ext not in (".py", ".ts", ".tsx", ".js", ".jsx", ".md", ".json", ".yaml", ".sh"):
+                    continue
+                full_path = Path(root) / file
+                rel_path = str(full_path.relative_to(self.workspace_root)).replace("\\", "/")
+                if rel_path == self._registry_rel:
+                    # Реестр не может быть собственным храповиком: каждая
+                    # запись в него меняла бы его же размер и раздувала бы
+                    # сама себя на следующем проходе.
+                    continue
+                size = full_path.stat().st_size
+                # Если файл уже в реестре, обновляем только если размер уменьшился (shrink-only)
+                if rel_path in self.limits:
+                    if size < self.limits[rel_path]:
+                        logger.info(f"Храповик понижен для {rel_path}: {self.limits[rel_path]} -> {size} байт")
                         self.limits[rel_path] = size
-                    scanned += 1
+                else:
+                    self.limits[rel_path] = size
+                scanned += 1
 
         self._save_limits()
         logger.info(f"Базовые храповики зафиксированы для {scanned} файлов.")
         return self.limits
 
-    def check_file(self, rel_path: str, max_allowed_growth_ratio: float = 0.15) -> bool:
+    def check_file(self, rel_path: str, max_allowed_growth_ratio: float = 0.15, persist: bool = True) -> bool:
         """
         Проверка файла на превышение установленного храповика.
         Возвращает True, если размер в пределах нормы, False при раздувании (bloat).
+
+        persist=False — режим гейта: только чтение, реестр на диске не
+        меняется. Без этого CommitGate, проверяя дифф, попутно переписывал бы
+        файл, который сам же охраняет.
         """
-        norm_path = rel_path.replace("\\", "/").lstrip("./")
+        norm_path = self._normalize(rel_path)
         full_path = self.workspace_root / norm_path
 
         if not full_path.exists():
@@ -89,15 +113,17 @@ class SizeRatchetsManager:
 
         if recorded_limit is None:
             # Новый файл - регистрируем его текущий размер
-            self.limits[norm_path] = current_size
-            self._save_limits()
+            if persist:
+                self.limits[norm_path] = current_size
+                self._save_limits()
             return True
 
         # Если файл уменьшился - фиксируем новый нижний лимит (shrink-only)
         if current_size < recorded_limit:
-            logger.info(f"[SHRINK] Размер {norm_path} уменьшился ({recorded_limit} -> {current_size} B). Храповик обновлен.")
-            self.limits[norm_path] = current_size
-            self._save_limits()
+            if persist:
+                logger.info(f"[SHRINK] Размер {norm_path} уменьшился ({recorded_limit} -> {current_size} B). Храповик обновлен.")
+                self.limits[norm_path] = current_size
+                self._save_limits()
             return True
 
         # Проверка допустимого порога
@@ -108,15 +134,79 @@ class SizeRatchetsManager:
 
         return True
 
+    def check_paths(self, paths: List[str], max_allowed_growth_ratio: float = 0.15, persist: bool = False) -> Dict[str, Any]:
+        """Проверка списка путей (диффа) одним вызовом — контракт для CommitGate.
+
+        Возвращает структурный список нарушителей, а не один булев флаг: гейт
+        обязан показать оператору, что именно раздулось и насколько, а не
+        просто отказать. По умолчанию persist=False — это и есть гейт-режим.
+        """
+        violations: List[Dict[str, Any]] = []
+        for rel_path in paths:
+            norm_path = self._normalize(rel_path)
+            full_path = self.workspace_root / norm_path
+            if not full_path.exists():
+                continue
+            current_size = full_path.stat().st_size
+            recorded_limit = self.limits.get(norm_path)
+            ok = self.check_file(rel_path, max_allowed_growth_ratio=max_allowed_growth_ratio, persist=persist)
+            if not ok:
+                ceiling = int(recorded_limit * (1.0 + max_allowed_growth_ratio))
+                violations.append({
+                    "path": norm_path,
+                    "recorded_limit": recorded_limit,
+                    "ceiling": ceiling,
+                    "current_size": current_size,
+                })
+        return {"ok": not violations, "violations": violations, "checked": [self._normalize(p) for p in paths]}
+
+    def rebaseline(self, rel_path: str, reason: str) -> Dict[str, Any]:
+        """Явная, осознанная переустановка базы — единственный законный способ
+        поднять лимит. Причина обязательна и остаётся в реестре как аудит-
+        запись: рост объёма без объяснения — то самое раздувание, от которого
+        Принцип 10 защищает."""
+        reason = (reason or "").strip()
+        if not reason:
+            raise ValueError("rebaseline требует непустую причину — это аудит-запись, а не побочный эффект")
+
+        norm_path = self._normalize(rel_path)
+        full_path = self.workspace_root / norm_path
+        current_size = full_path.stat().st_size if full_path.exists() else 0
+        old_limit = self.limits.get(norm_path)
+
+        self.limits[norm_path] = current_size
+        record = {
+            "path": norm_path,
+            "old_limit": old_limit,
+            "new_limit": current_size,
+            "reason": reason,
+            "at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        self.rebaselines.append(record)
+        self._save_limits()
+        logger.warning(f"[REBASELINE] {norm_path}: {old_limit} -> {current_size} B. Причина: {reason}")
+        return record
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Size Ratchets Shrink-Only Enforcer")
     parser.add_argument("--record-baseline", action="store_true", help="Зафиксировать базовые размеры файлов")
     parser.add_argument("--check-file", type=str, help="Проверить конкретный файл на раздувание")
     parser.add_argument("--status", action="store_true", help="Показать текущий реестр храповиков")
+    parser.add_argument("--rebaseline", type=str, help="Явно переустановить базу для файла (требует --reason)")
+    parser.add_argument("--reason", type=str, default="", help="Причина переустановки базы (обязательна с --rebaseline)")
 
     args = parser.parse_args()
     manager = SizeRatchetsManager()
+
+    if args.rebaseline:
+        try:
+            rec = manager.rebaseline(args.rebaseline, args.reason)
+        except ValueError as e:
+            print(json.dumps({"ok": False, "error": str(e)}, indent=2, ensure_ascii=False))
+            return 10
+        print(json.dumps({"ok": True, **rec}, indent=2, ensure_ascii=False))
+        return 0
 
     if args.record_baseline:
         limits = manager.record_baseline()

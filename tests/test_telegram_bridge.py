@@ -69,18 +69,18 @@ class TestSSESubscriberReconnect(unittest.TestCase):
         received = []
         sleeps = []
 
-        def fake_sleep(seconds):
-            sleeps.append(seconds)
-            if len(sleeps) >= 1:
+        def on_event(event_type, data):
+            received.append((event_type, data))
+            if event_type == "panic_stop" and data.get("reason") == "second":
                 sub.stop()
 
         sub = SSESubscriber(
             url="http://fake/api/events/stream",
-            on_event=lambda event_type, data: received.append((event_type, data)),
+            on_event=on_event,
             opener=fake_opener,
             initial_backoff=0.1,
             max_backoff=1.0,
-            sleep_fn=fake_sleep,
+            sleep_fn=sleeps.append,
         )
         sub.run_forever()
 

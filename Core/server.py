@@ -130,7 +130,12 @@ class ControlApiHandler(http.server.BaseHTTPRequestHandler):
         if self.path == "/api/swarm/tasks":
             manager = WorktreeSandboxManager(workspace_root=ROOT_DIR)
             worktree_entries = manager.list_sandboxes()
-            root_resolved = ROOT_DIR.resolve()
+            # Песочницей считается только то, что реально лежит под ROOT_DIR/worktrees/ —
+            # именно туда WorktreeSandboxManager.create_sandbox() кладёт свои worktree.
+            # Сравнение "путь != ROOT_DIR" здесь недостаточно: если сам демон запущен
+            # из связанного worktree (а не из главного чекаута), список git worktree
+            # содержит и главный чекаут репозитория — он не является песочницей.
+            sandboxes_base = (ROOT_DIR / "worktrees").resolve()
 
             subagents: List[Dict[str, Any]] = []
             for entry in worktree_entries:
@@ -138,15 +143,16 @@ class ControlApiHandler(http.server.BaseHTTPRequestHandler):
                 if not wt_path_raw:
                     continue
                 wt_path = Path(wt_path_raw).resolve()
-                if wt_path == root_resolved:
-                    continue  # сама рабочая область — не песочница субагента
+                try:
+                    rel_path = wt_path.relative_to(sandboxes_base)
+                except ValueError:
+                    continue  # не под worktrees/ этой рабочей области — не песочница
                 branch_ref = entry.get("branch", "")
                 subagents.append({
                     "id": wt_path.name,
                     "role": "Active Sandbox Worktree",
                     "status": "DETACHED" if "detached" in entry else "RUNNING",
-                    "worktree": str(wt_path.relative_to(root_resolved)).replace("\\", "/")
-                        if wt_path.is_relative_to(root_resolved) else str(wt_path),
+                    "worktree": ("worktrees/" + str(rel_path)).replace("\\", "/"),
                     "branch": branch_ref.replace("refs/heads/", "") if branch_ref else None,
                     "head": entry.get("HEAD", "")[:12],
                 })

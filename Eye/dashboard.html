@@ -1010,54 +1010,12 @@ hr{border:none; border-top:1px solid var(--line); margin:34px 0}
           </div>
         </div>
 
-        <!-- Ветви к дочерним субагентам -->
-        <div style="margin-left:24px; padding-left:14px; border-left:2px dashed #363b43; display:flex; flex-direction:column; gap:12px;">
-          
-          <!-- Узел 2: Planning Scout -->
-          <div style="background:#181b22; border:1px solid #262a30; border-radius:8px; padding:12px;">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-              <div>
-                <span style="font-family:var(--mono); font-size:9px; background:rgba(147,51,234,0.2); color:#c084fc; padding:1px 5px; border-radius:3px; font-weight:bold;">SUBAGENT • PLANNING SCOUT</span>
-                <h6 style="margin:3px 0 2px; color:#fff; font-size:12px;">Architectural Scout & CoT Decomposition</h6>
-                <div style="font-size:11px; color:#7d8590;">Анализ репозитория, AST связности и синтез пошаговой спецификации.</div>
-              </div>
-              <span style="font-family:var(--mono); font-size:9.5px; color:#34d399; background:rgba(16,185,129,0.15); padding:1px 5px; border-radius:3px;">IDLE / READY</span>
-            </div>
-            <div style="margin-top:6px; font-family:var(--mono); font-size:9.5px; color:#64748b;">
-              Песочница: <code style="color:#93c5fd;">worktrees/scout-plan/</code> • Изоляция Git Worktree
-            </div>
-          </div>
-
-          <!-- Узел 3: Execution Child -->
-          <div style="background:#181b22; border:1px solid #262a30; border-radius:8px; padding:12px;">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-              <div>
-                <span style="font-family:var(--mono); font-size:9px; background:rgba(245,158,11,0.2); color:#f59e0b; padding:1px 5px; border-radius:3px; font-weight:bold;">SUBAGENT • EXECUTION CHILD</span>
-                <h6 style="margin:3px 0 2px; color:#fff; font-size:12px;">Code Synthesizer & TDD Worker</h6>
-                <div style="font-size:11px; color:#7d8590;">Генерация кандидатного диффа, прогон тестов Red-Green и проверка храповиков.</div>
-              </div>
-              <span style="font-family:var(--mono); font-size:9.5px; color:#34d399; background:rgba(16,185,129,0.15); padding:1px 5px; border-radius:3px;">IDLE / READY</span>
-            </div>
-            <div style="margin-top:6px; font-family:var(--mono); font-size:9.5px; color:#64748b;">
-              Песочница: <code style="color:#93c5fd;">worktrees/child-synth/</code> • Shrink-Only Ratchet Active
-            </div>
-          </div>
-
-          <!-- Узел 4: Class 3 Arbitrator Quorum -->
-          <div style="background:#181b22; border:1px solid #10b981; border-radius:8px; padding:12px;">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-              <div>
-                <span style="font-family:var(--mono); font-size:9px; background:rgba(16,185,129,0.2); color:#34d399; padding:1px 5px; border-radius:3px; font-weight:bold;">GATE • WHY_AI MULTI-HARNESS</span>
-                <h6 style="margin:3px 0 2px; color:#fff; font-size:12px;">Class 3 Arbitrator & Angle Diversity Quorum</h6>
-                <div style="font-size:11px; color:#7d8590;">3 независимых класса моделей (Arbitrator, Architect, Executor) с правом вето.</div>
-              </div>
-              <span style="font-family:var(--mono); font-size:9.5px; color:#34d399; background:rgba(16,185,129,0.15); padding:1px 5px; border-radius:3px;">ARMED (0 VETOES)</span>
-            </div>
-            <div style="margin-top:6px; font-family:var(--mono); font-size:9.5px; color:#64748b;">
-              Предохранитель: <code style="color:#f0a868;">Fail-Closed (Exit 10) on BIBLE Veto</code>
-            </div>
-          </div>
-
+        <!-- Дочерние песочницы — рендерится динамически из /api/swarm/tasks,
+             см. renderSwarmChildNodes(). Раньше это были три захардкоженных
+             узла (scout-01/child-01/arbitrator-01), не связанных с реальным
+             состоянием WorktreeSandboxManager. -->
+        <div id="swarmChildNodes" style="margin-left:24px; padding-left:14px; border-left:2px dashed #363b43; display:flex; flex-direction:column; gap:12px;">
+          <div style="font-family:var(--mono); font-size:10.5px; color:#7d8590; padding:8px 0;">Загрузка дерева роя…</div>
         </div>
       </div>
 
@@ -1542,6 +1500,35 @@ hr{border:none; border-top:1px solid var(--line); margin:34px 0}
       }
     }
 
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[c]);
+    }
+
+    function renderSwarmChildNodes(subagents) {
+      const container = document.getElementById('swarmChildNodes');
+      if (!container) return;
+      if (!subagents || subagents.length === 0) {
+        container.innerHTML = '<div style="font-family:var(--mono); font-size:10.5px; color:#7d8590; padding:8px 0;">Нет активных песочниц — рой сейчас простаивает (IDLE).</div>';
+        return;
+      }
+      container.innerHTML = subagents.map(a => `
+        <div style="background:#181b22; border:1px solid #262a30; border-radius:8px; padding:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+              <span style="font-family:var(--mono); font-size:9px; background:rgba(147,51,234,0.2); color:#c084fc; padding:1px 5px; border-radius:3px; font-weight:bold;">SANDBOX • ${escapeHtml(a.id)}</span>
+              <h6 style="margin:3px 0 2px; color:#fff; font-size:12px;">${escapeHtml(a.role || 'Active Sandbox')}</h6>
+            </div>
+            <span style="font-family:var(--mono); font-size:9.5px; color:#34d399; background:rgba(16,185,129,0.15); padding:1px 5px; border-radius:3px;">${escapeHtml(a.status || '')}</span>
+          </div>
+          <div style="margin-top:6px; font-family:var(--mono); font-size:9.5px; color:#64748b;">
+            Ветка: <code style="color:#93c5fd;">${escapeHtml(a.branch || '-')}</code> • <code style="color:#93c5fd;">${escapeHtml(a.worktree || '')}</code>
+          </div>
+        </div>
+      `).join('');
+    }
+
     function loadIdentityAndSwarmData() {
       if (window.location && window.location.protocol.startsWith('http')) {
         // 1. Загрузка идентичности
@@ -1567,6 +1554,7 @@ hr{border:none; border-top:1px solid var(--line); margin:34px 0}
             if (countEl) {
               countEl.innerText = `${d.active_sandboxes_count || 0} активных (${d.lifecycle_clean ? 'Clean' : 'Pruning needed'})`;
             }
+            renderSwarmChildNodes(d.subagents);
           })
           .catch(() => {});
       } else {

@@ -125,46 +125,46 @@ class ControlApiHandler(http.server.BaseHTTPRequestHandler):
             self._send_json(200, status_data)
             return
 
-        # 3. REST: Дерево роя субагентов (Swarm Task-Tree)
+        # 3. REST: Дерево роя субагентов (Swarm Task-Tree) — из реальных worktree-песочниц,
+        # не из литерала. См. docs/final_vision/03-roadmap.md, пункт 5.1.2.
         if self.path == "/api/swarm/tasks":
+            manager = WorktreeSandboxManager(workspace_root=ROOT_DIR)
+            worktree_entries = manager.list_sandboxes()
+            root_resolved = ROOT_DIR.resolve()
+
+            subagents: List[Dict[str, Any]] = []
+            for entry in worktree_entries:
+                wt_path_raw = entry.get("worktree", "")
+                if not wt_path_raw:
+                    continue
+                wt_path = Path(wt_path_raw).resolve()
+                if wt_path == root_resolved:
+                    continue  # сама рабочая область — не песочница субагента
+                branch_ref = entry.get("branch", "")
+                subagents.append({
+                    "id": wt_path.name,
+                    "role": "Active Sandbox Worktree",
+                    "status": "DETACHED" if "detached" in entry else "RUNNING",
+                    "worktree": str(wt_path.relative_to(root_resolved)).replace("\\", "/")
+                        if wt_path.is_relative_to(root_resolved) else str(wt_path),
+                    "branch": branch_ref.replace("refs/heads/", "") if branch_ref else None,
+                    "head": entry.get("HEAD", "")[:12],
+                })
+
+            orch = WorkspaceOrchestrator(workspace_root=ROOT_DIR)
+            active_mode = orch.resolve_active_mode()["mode"]
+
             swarm_data = {
-                "swarm_state": "ACTIVE / ARMED",
+                "swarm_state": "ACTIVE" if subagents else "IDLE",
                 "root_orchestrator": {
                     "id": "agent-root",
                     "role": "Global Sovereign Orchestrator (Rank 1)",
                     "status": "RUNNING",
-                    "mode": "self_evo",
+                    "mode": active_mode,
                     "current_directive": "Continuous Core Refactoring & Quorum Supervision",
                 },
-                "subagents": [
-                    {
-                        "id": "scout-01",
-                        "name": "Planning Scout",
-                        "role": "Architectural Exploration & Task Decomposition",
-                        "status": "COMPLETED",
-                        "worktree": "worktrees/scout-plan",
-                        "outcome": "PRD & Spec-Driven Roadmap verified",
-                        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                    },
-                    {
-                        "id": "child-01",
-                        "name": "Execution Child",
-                        "role": "Code Synthesis & AST Validation",
-                        "status": "COMPLETED",
-                        "worktree": "worktrees/child-synth",
-                        "outcome": "Shrink-only candidate diff & unit tests synthesized",
-                        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                    },
-                    {
-                        "id": "arbitrator-01",
-                        "name": "Class 3 Arbitrator",
-                        "role": "Constitutional BIBLE.md & Zone P/R Audit",
-                        "status": "APPROVED",
-                        "outcome": "0 Vetoes (Angle Diversity Confirmed)",
-                        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                    },
-                ],
-                "active_sandboxes_count": len(WorktreeSandboxManager(workspace_root=ROOT_DIR).list_sandboxes()),
+                "subagents": subagents,
+                "active_sandboxes_count": len(subagents),
                 "lifecycle_clean": True,
             }
             self._send_json(200, swarm_data)

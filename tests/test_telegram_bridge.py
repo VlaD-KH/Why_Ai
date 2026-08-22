@@ -18,6 +18,8 @@ from Core.server import ControlApiHandler, broadcast_event
 from Tool.connectors.telegram_bridge import (
     DEFAULT_MONITORED_SEVERITIES,
     SSESubscriber,
+    TelegramUpdatesPoller,
+    dispatch_action,
     event_severity,
     load_monitored_severities,
     should_forward,
@@ -234,6 +236,125 @@ class TestEventSeverityFilter(unittest.TestCase):
     def test_load_monitored_severities_falls_back_when_file_missing(self):
         severities = load_monitored_severities(Path(tempfile.gettempdir()) / "not-a-real-why-ai-config.yaml")
         self.assertEqual(severities, DEFAULT_MONITORED_SEVERITIES)
+
+
+class TestTelegramUpdatesPoller(unittest.TestCase):
+    """TASK-TG-09: long polling getUpdates — не setWebhook, публичный HTTPS не нужен."""
+
+    def test_poll_once_extracts_command_user_and_chat_then_advances_offset(self):
+        response_body = json.dumps({
+            "ok": True,
+            "result": [
+                {
+                    "update_id": 555,
+                    "message": {
+                        "text": "/status",
+                        "from": {"id": 111},
+                        "chat": {"id": 222},
+                    },
+                }
+            ],
+        }).encode("utf-8")
+
+        calls = []
+
+        def fake_opener(url, timeout):
+            calls.append(url)
+            return 200, response_body
+
+        received = []
+        poller = TelegramUpdatesPoller(
+            token="fake-token", on_command=lambda cmd, uid, cid: received.append((cmd, uid, cid)),
+            opener=fake_opener,
+        )
+        poller.poll_once()
+
+        self.assertEqual(received, [("/status", 111, 222)])
+        self.assertIn("getUpdates", calls[0])
+        self.assertNotIn("offset=", calls[0], "первый запрос не должен нести смещение")
+
+        # Второй вызов обязан унести offset = update_id + 1, иначе апдейт придёт снова.
+        poller.poll_once()
+        self.assertIn("offset=556", calls[1])
+
+    def test_poll_once_ignores_updates_without_text_and_non_ok_responses(self):
+        received = []
+        poller = TelegramUpdatesPoller(
+            token="fake-token", on_command=lambda cmd, uid, cid: received.append(cmd),
+            opener=lambda url, timeout: (200, json.dumps({
+                "ok": True, "result": [{"update_id": 1, "message": {"from": {"id": 1}, "chat": {"id": 1}}}],
+            }).encode()),
+        )
+        poller.poll_once()
+        self.assertEqual(received, [], "сообщение без text не должно вызывать on_command")
+
+        poller_bad_status = TelegramUpdatesPoller(
+            token="fake-token", on_command=lambda cmd, uid, cid: received.append(cmd),
+            opener=lambda url, timeout: (401, b'{"ok": false, "description": "Unauthorized"}'),
+        )
+        poller_bad_status.poll_once()  # не должен бросать исключение
+        self.assertEqual(received, [])
+
+
+class TestDispatchAction(unittest.TestCase):
+    """TASK-TG-10/TG-11: реальный вызов бэкенда, ответ основан на факте, не на отправке запроса."""
+
+    def test_panic_confirmed_only_on_2xx_from_the_real_endpoint(self):
+        calls = []
+
+        def opener_ok(url, timeout):
+            calls.append(url)
+            return 200, b""
+
+        reply = dispatch_action(
+            {"action": "TRIGGER_PANIC"}, backend_base_url="http://127.0.0.1:8765", opener=opener_ok,
+        )
+        self.assertIn("http://127.0.0.1:8765/api/panic", calls[0])
+        self.assertIn("подтверждён", reply)
+        self.assertNotIn("НЕ подтверждён", reply)
+
+    def test_panic_reports_failure_on_404_not_success(self):
+        # Анти-критерий TASK-TG-10: подмена эндпоинта на несуществующий (404)
+        # обязана дать сообщение об ОТКАЗЕ, а не "система остановлена".
+        reply = dispatch_action(
+            {"action": "TRIGGER_PANIC"}, backend_base_url="http://127.0.0.1:8765",
+            opener=lambda url, timeout: (404, b"Not Found"),
+        )
+        self.assertIn("НЕ подтверждён", reply)
+        self.assertIn("404", reply)
+
+    def test_panic_reports_failure_on_transport_error(self):
+        def broken_opener(url, timeout):
+            raise ConnectionRefusedError("daemon is down")
+
+        reply = dispatch_action(
+            {"action": "TRIGGER_PANIC"}, backend_base_url="http://127.0.0.1:8765", opener=broken_opener,
+        )
+        self.assertIn("НЕ подтверждён", reply)
+
+    def test_status_reports_real_backend_data_not_a_hardcoded_string(self):
+        body = json.dumps({"status": "RUNNING", "version": "1.1.0-gold", "workspace_root": "/tmp/x"}).encode()
+        reply = dispatch_action(
+            {"action": "GET_STATUS"}, backend_base_url="http://127.0.0.1:8765",
+            opener=lambda url, timeout: (200, body),
+        )
+        self.assertIn("RUNNING", reply)
+        self.assertIn("1.1.0-gold", reply)
+
+    def test_status_reports_failure_on_non_2xx(self):
+        reply = dispatch_action(
+            {"action": "GET_STATUS"}, backend_base_url="http://127.0.0.1:8765",
+            opener=lambda url, timeout: (503, b"Service Unavailable"),
+        )
+        self.assertIn("Не удалось", reply)
+
+    def test_other_actions_pass_through_the_existing_reply_unchanged(self):
+        # DISABLE_BACKGROUND_EVO и т.п. не имеют реального бэкенд-вызова в
+        # этом цикле (TASK-TG-09..12) — dispatch_action не должен подделывать
+        # успех, которого не проверял.
+        action_result = {"action": "DISABLE_BACKGROUND_EVO", "reply": "⏸️ Фоновое самосознание временно приостановлено."}
+        reply = dispatch_action(action_result, backend_base_url="http://127.0.0.1:8765", opener=lambda u, t: (200, b""))
+        self.assertEqual(reply, action_result["reply"])
 
 
 if __name__ == "__main__":

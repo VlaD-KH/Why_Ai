@@ -8,12 +8,20 @@ Core/server.py instance for wire-format compatibility.
 
 import http.server
 import json
+import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path
 
 from Core.server import ControlApiHandler, broadcast_event
-from Tool.connectors.telegram_bridge import SSESubscriber
+from Tool.connectors.telegram_bridge import (
+    DEFAULT_MONITORED_SEVERITIES,
+    SSESubscriber,
+    event_severity,
+    load_monitored_severities,
+    should_forward,
+)
 
 TEST_PORT = 18767
 
@@ -185,6 +193,47 @@ class TestSSESubscriberAgainstRealServer(unittest.TestCase):
                 return
             time.sleep(0.05)
         raise AssertionError("condition not met within timeout")
+
+
+class TestEventSeverityFilter(unittest.TestCase):
+    """TASK-TG-08: фильтр уровней — конфигурируемый, не по выдуманной 4-уровневой схеме."""
+
+    def test_known_event_types_map_to_documented_severities(self):
+        # Соответствует Eye/telegram_mini_app.html:EVENT_META (sev).
+        self.assertEqual(event_severity("panic_stop"), "crit")
+        self.assertEqual(event_severity("mode_changed"), "warn")
+        self.assertEqual(event_severity("dvpn_fallback"), "warn")
+        self.assertEqual(event_severity("worktrees_pruned"), "info")
+        self.assertEqual(event_severity("connected"), "ok")
+
+    def test_unknown_event_type_defaults_to_info_not_silently_dropped(self):
+        self.assertEqual(event_severity("some_future_event_type"), "info")
+
+    def test_should_forward_respects_configured_severities(self):
+        self.assertTrue(should_forward("panic_stop", {"crit"}))
+        self.assertFalse(should_forward("worktrees_pruned", {"crit", "warn"}))
+        self.assertTrue(should_forward("mode_changed", {"crit", "warn"}))
+
+    def test_load_monitored_severities_reads_config_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            conf = Path(tmp) / "why_ai_config.yaml"
+            conf.write_text(
+                'tools:\n  telegram_bridge:\n    monitored_severities:\n      - "crit"\n',
+                encoding="utf-8",
+            )
+            severities = load_monitored_severities(conf)
+        self.assertEqual(severities, frozenset({"crit"}))
+
+    def test_load_monitored_severities_falls_back_to_default_when_absent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            conf = Path(tmp) / "why_ai_config.yaml"
+            conf.write_text('system:\n  project_name: "x"\n', encoding="utf-8")
+            severities = load_monitored_severities(conf)
+        self.assertEqual(severities, DEFAULT_MONITORED_SEVERITIES)
+
+    def test_load_monitored_severities_falls_back_when_file_missing(self):
+        severities = load_monitored_severities(Path(tempfile.gettempdir()) / "not-a-real-why-ai-config.yaml")
+        self.assertEqual(severities, DEFAULT_MONITORED_SEVERITIES)
 
 
 if __name__ == "__main__":

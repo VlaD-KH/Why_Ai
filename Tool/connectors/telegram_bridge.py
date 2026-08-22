@@ -18,13 +18,78 @@ import json
 import logging
 import time
 import urllib.request
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Callable, Dict, FrozenSet, Iterator, List, Optional, Tuple
+
+try:
+    from miniyaml import load_path as _load_yaml_path
+except ImportError:
+    from Supervisor.miniyaml import load_path as _load_yaml_path
 
 logger = logging.getLogger("TelegramBridge")
 
 DEFAULT_READ_TIMEOUT_SECONDS = 5.0
 DEFAULT_INITIAL_BACKOFF_SECONDS = 1.0
 DEFAULT_MAX_BACKOFF_SECONDS = 30.0
+
+# Соответствие типов SSE-событий, реально вещаемых Core/server.py:broadcast_event(),
+# уровню серьёзности. Совпадает с EVENT_META в Eye/telegram_mini_app.html — одна
+# классификация, не две расходящиеся. Старая спецификация постулировала 4 уровня
+# (PANIC/CRITICAL/CONSENSUS/SIZE_WARN), из которых через SSE реально идёт только
+# PANIC (panic_stop); CRITICAL/CONSENSUS/SIZE_WARN — файловые источники
+# (Core/failures.jsonl, QuorumReviewer.review_diff(), antigravity_debug.log),
+# не подключённые мостом в этом цикле (см. docs/final_vision/02-architecture.md).
+EVENT_SEVERITY: Dict[str, str] = {
+    "connected": "ok",
+    "panic_stop": "crit",
+    "worktrees_pruned": "info",
+    "evolution_cycle": "info",
+    "mode_changed": "warn",
+    "db_synced": "info",
+    "dvpn_connected": "ok",
+    "dvpn_tier_switched": "info",
+    "dvpn_fallback": "warn",
+}
+DEFAULT_MONITORED_SEVERITIES: FrozenSet[str] = frozenset({"crit", "warn"})
+
+
+def event_severity(event_type: str) -> str:
+    """Серьёзность типа события. Неизвестный тип — "info", не отбрасывается молча."""
+    return EVENT_SEVERITY.get(event_type, "info")
+
+
+def should_forward(event_type: str, monitored_severities: Any) -> bool:
+    """Пересылать ли событие оператору при данном наборе отслеживаемых уровней."""
+    return event_severity(event_type) in monitored_severities
+
+
+def load_monitored_severities(config_path: Any) -> FrozenSet[str]:
+    """
+    Читает tools.telegram_bridge.monitored_severities из why_ai_config.yaml.
+
+    Отсутствие файла, секции или ключа — не ошибка: конфигурация опциональна,
+    fallback на DEFAULT_MONITORED_SEVERITIES.
+    """
+    try:
+        conf = _load_yaml_path(str(config_path))
+    except (OSError, ValueError):
+        return DEFAULT_MONITORED_SEVERITIES
+
+    if not isinstance(conf, dict):
+        return DEFAULT_MONITORED_SEVERITIES
+
+    tools = conf.get("tools")
+    if not isinstance(tools, dict):
+        return DEFAULT_MONITORED_SEVERITIES
+
+    bridge_conf = tools.get("telegram_bridge")
+    if not isinstance(bridge_conf, dict):
+        return DEFAULT_MONITORED_SEVERITIES
+
+    severities = bridge_conf.get("monitored_severities")
+    if not isinstance(severities, list) or not severities:
+        return DEFAULT_MONITORED_SEVERITIES
+
+    return frozenset(str(s) for s in severities)
 
 # Тип функции, открывающей поток: (url, timeout) -> объект, итерируемый по
 # строкам байт (совместим с http.client.HTTPResponse и с фейками в тестах).

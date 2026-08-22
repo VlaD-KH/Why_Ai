@@ -44,7 +44,8 @@ class TestSupervisorLauncherCLI(unittest.TestCase):
     def _run_cli(self, *args):
         return subprocess.run(
             [sys.executable, str(ROOT_DIR / "Supervisor" / "launcher.py"), *args],
-            capture_output=True, text=True, cwd=str(ROOT_DIR), timeout=30,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=str(ROOT_DIR), timeout=30,
         )
 
     def test_cli_parser_constructs(self):

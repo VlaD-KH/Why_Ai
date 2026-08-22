@@ -23,19 +23,21 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "Core"))
 try:
     from WorktreeSandbox import WorktreeSandboxManager
     from QuorumReviewer import MultiModelQuorumReviewer
-    from CommitGate import ReviewedCommitGate
-    from SizeRatchets import SizeRatchetsManager
+    from CommitGate import ReviewedCommitGate, extract_changed_files
     from miniyaml import parse_yaml
     from MetaOverPatch import MetaOverPatchEngine
     from PolicyDriftVector import PolicyDriftVectorAnalyzer
+    from WorkspaceOrchestrator import WorkspaceOrchestrator, MODE_PROD_EVO
+    from launcher import SupervisorLauncher
 except ImportError:
     from Supervisor.WorktreeSandbox import WorktreeSandboxManager  # type: ignore
     from Supervisor.QuorumReviewer import MultiModelQuorumReviewer  # type: ignore
-    from Supervisor.CommitGate import ReviewedCommitGate  # type: ignore
-    from Supervisor.SizeRatchets import SizeRatchetsManager  # type: ignore
+    from Supervisor.CommitGate import ReviewedCommitGate, extract_changed_files  # type: ignore
     from Supervisor.miniyaml import parse_yaml  # type: ignore
     from Core.MetaOverPatch import MetaOverPatchEngine  # type: ignore
     from Core.PolicyDriftVector import PolicyDriftVectorAnalyzer  # type: ignore
+    from Supervisor.WorkspaceOrchestrator import WorkspaceOrchestrator, MODE_PROD_EVO  # type: ignore
+    from Supervisor.launcher import SupervisorLauncher  # type: ignore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] [EVO-DAEMON] %(message)s")
 logger = logging.getLogger("EvolutionDaemon")
@@ -81,7 +83,6 @@ class AutonomousEvolutionDaemon:
         self.sandbox_manager = WorktreeSandboxManager(workspace_root=self.workspace_root)
         self.quorum_reviewer = MultiModelQuorumReviewer(workspace_root=self.workspace_root)
         self.commit_gate = ReviewedCommitGate(workspace_root=self.workspace_root)
-        self.ratchets_manager = SizeRatchetsManager(workspace_root=self.workspace_root)
         self.meta_patch = MetaOverPatchEngine(workspace_root=self.workspace_root)
         self.drift_analyzer = PolicyDriftVectorAnalyzer(workspace_root=self.workspace_root)
 
@@ -93,6 +94,28 @@ class AutonomousEvolutionDaemon:
             require_failure_binding=idemp_conf.get("require_failure_binding", True),
             shrink_only_ratchet=idemp_conf.get("shrink_only_ratchet", True),
         )
+        self.orchestrator = WorkspaceOrchestrator(workspace_root=self.workspace_root)
+
+    def enforce_mode_policy(self) -> Dict[str, Any]:
+        """
+        Требование оператора 5.1.1: в режиме [prod_evo] фоновый демон обязан
+        отправляться в SIGTERM, а не просто «не запускать новый цикл» —
+        уже зарегистрированный фоновый процесс должен быть остановлен, чтобы
+        освободить ресурсы. Вызывается как первый шаг run_evolution_cycle, но
+        также доступен отдельно (вне цикла) — например, из супервизора при
+        самом переключении режима, не дожидаясь следующей попытки эволюции.
+
+        Режим сильнее feature-флага: background_consciousness.enabled=true
+        не спасает фоновую генерацию в [prod_evo].
+        """
+        mode_resolution = self.orchestrator.resolve_active_mode()
+        if mode_resolution["mode"] == MODE_PROD_EVO:
+            launcher = SupervisorLauncher(workspace_root=self.workspace_root)
+            sigterm_report = launcher.terminate_background(
+                reason=f"[prod_evo] enforcement: mode={mode_resolution['mode']} (source={mode_resolution['source']})"
+            )
+            return {"background_allowed": False, "mode_resolution": mode_resolution, "sigterm": sigterm_report}
+        return {"background_allowed": True, "mode_resolution": mode_resolution, "sigterm": None}
 
     def _load_config(self) -> Dict[str, Any]:
         """Загрузка why_ai_config.yaml."""
@@ -122,39 +145,67 @@ class AutonomousEvolutionDaemon:
             logger.info("Модуль background_consciousness отключен в why_ai_config.yaml.")
             return {"cycle_id": cycle_id, "status": "MODULE_DISABLED"}
 
+        # 0. Гейт режима (Требование 5.1.1) — до анализа, до песочницы, до
+        # какой-либо траты ресурсов. [prod_evo] обязан отправить фоновый
+        # процесс в SIGTERM и остановиться здесь, независимо от флага
+        # background_consciousness.enabled.
+        mode_policy = self.enforce_mode_policy()
+        if not mode_policy["background_allowed"]:
+            logger.warning(
+                f"[prod_evo] активен (источник: {mode_policy['mode_resolution']['source']}) — "
+                f"фоновая эволюция остановлена, цикл {cycle_id} не запускается."
+            )
+            return {
+                "cycle_id": cycle_id,
+                "status": "PROD_EVO_SIGTERM",
+                "background_allowed": False,
+                "mode_resolution": mode_policy["mode_resolution"],
+                "sigterm": mode_policy["sigterm"],
+            }
+
         # 1. Анализ первопричин сбоев
         refactor_plan = self.meta_patch.generate_refactor_plan()
         if force:
             refactor_plan["forced"] = True
 
-        changed_files = ["Core/evolution_log.txt", "tests/test_meta_over_patch.py"]
-
-        # 2. Idempotency Gate
-        valid, reason = self.idempotency_gate.validate_proposal(refactor_plan, changed_files)
-        if not valid:
-            logger.info(f"Idempotency Gate: {reason}")
-            return {"cycle_id": cycle_id, "status": "IDEMPOTENT_SKIPPED", "reason": reason}
-
-        # 3. Создание изолированной песочницы
-        sandbox = self.sandbox_manager.create_sandbox(task_id=cycle_id)
-
-        # 4. Синтез кандидатного диффа оптимизации
+        # 2. Синтез кандидатного диффа оптимизации — единственный источник
+        # списка затронутых файлов; changed_files выводится из ЭТОГО диффа
+        # (extract_changed_files), а не задаётся отдельным литералом. Раньше
+        # здесь стоял захардкоженный ["Core/evolution_log.txt",
+        # "tests/test_meta_over_patch.py"] — список, который не совпадал с
+        # тем, что реально менял дифф, и это же скрывало вето Zone P/R в
+        # CommitGate (см. extract_changed_files).
         candidate_diff = (
+            f"diff --git a/Core/evolution_log.txt b/Core/evolution_log.txt\n"
             f"--- a/Core/evolution_log.txt\n"
             f"+++ b/Core/evolution_log.txt\n"
             f"+# Evolution Cycle {cycle_id} verified at {datetime.datetime.now(datetime.timezone.utc).isoformat()}\n"
             f"+# Refactor objective: {refactor_plan.get('title', 'Self-Evo Optimization')}\n"
         )
+        changed_files = extract_changed_files(candidate_diff)
 
-        # 5. Шлюз префлайта и Мультимодельный кворум
-        preflight = self.commit_gate.stage_preflight(candidate_diff, changed_files)
+        # 3. Idempotency Gate — проверяется против того же списка файлов,
+        # что реально в диффе.
+        valid, reason = self.idempotency_gate.validate_proposal(refactor_plan, changed_files)
+        if not valid:
+            logger.info(f"Idempotency Gate: {reason}")
+            return {"cycle_id": cycle_id, "status": "IDEMPOTENT_SKIPPED", "reason": reason, "changed_files": changed_files}
+
+        # 4. Создание изолированной песочницы
+        sandbox = self.sandbox_manager.create_sandbox(task_id=cycle_id)
+
+        # 5. Шлюз префлайта: Size Ratchets (гейт-режим, без записи) +
+        # мультимодельный кворум.
+        preflight = self.commit_gate.stage_preflight(candidate_diff)
         if not preflight["can_merge"]:
-            logger.warning(f"Кворум отклонил кандидатный дифф цикла {cycle_id}")
+            logger.warning(f"Гейт отклонил кандидатный дифф цикла {cycle_id}: {preflight['status']}")
             self.sandbox_manager.remove_sandbox(task_id=cycle_id)
             return {
                 "cycle_id": cycle_id,
-                "status": "REJECTED_BY_QUORUM",
+                "status": preflight["status"],
+                "changed_files": changed_files,
                 "quorum_result": preflight["quorum_result"],
+                "ratchet_verification": preflight["ratchet_result"],
             }
 
         # 6. Верификация Re-fingerprint и 3-Way слияние
@@ -167,15 +218,27 @@ class AutonomousEvolutionDaemon:
         # 7. Очистка песочницы (Worktree Lifecycle Manager)
         self.sandbox_manager.remove_sandbox(task_id=cycle_id)
 
-        # 8. Фиксация в храповиках размера
-        self.ratchets_manager.record_baseline()
+        # 8. Принцип 15: успех — только по фактически проверенному результату
+        # храповиков, не по факту вызова. Раньше здесь стоял безусловный
+        # self.ratchets_manager.record_baseline() — обход ВСЕГО workspace_root
+        # на каждый цикл, который переустанавливает базы для файлов, вообще
+        # не входивших в этот дифф. Отчёт цикла теперь несёт именно тот
+        # ratchet_result, что уже был проверен на шаге 5 (persist=False —
+        # ничего не переписано), с явным перечнем проверенных путей.
+        ratchet_verification = {
+            "ok": preflight["ratchet_result"]["ok"],
+            "checked": changed_files,
+            "violations": preflight["ratchet_result"]["violations"],
+        }
 
         logger.info(f"Эволюционный цикл {cycle_id} успешно завершен и слит в основную ветку!")
         return {
             "cycle_id": cycle_id,
             "status": "EVOLUTION_CYCLE_SUCCESS",
+            "changed_files": changed_files,
             "merge_result": merge_result,
             "refactor_plan": refactor_plan,
+            "ratchet_verification": ratchet_verification,
         }
 
 
@@ -183,7 +246,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Self-Evo Autonomous Recursive Evolution Daemon")
     parser.add_argument("--step", action="store_true", help="Выполнить один шаг автономной эволюции")
     parser.add_argument("--task-name", type=str, default="routine-opt", help="Имя эволюционной задачи")
-    parser.add_argument("--status", action="store_true", help="Диагностика состояния демона")
+    parser.add_argument("--status", action="store_true", help="Диагностика состояния демона (без побочных эффектов)")
+    parser.add_argument("--enforce-mode", action="store_true",
+                        help="Применить политику режима: в [prod_evo] реально отправляет фоновые процессы в SIGTERM")
     parser.add_argument("--force", action="store_true", help="Принудительный запуск без привязки к сбоям")
 
     args = parser.parse_args()
@@ -194,15 +259,27 @@ def main() -> int:
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return 0
 
+    if args.enforce_mode:
+        report = daemon.enforce_mode_policy()
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+        return 0
+
     if args.status:
+        # Только чтение: резолвит режим напрямую, а не через
+        # enforce_mode_policy(), которая в [prod_evo] реально шлёт SIGTERM.
+        # Диагностика не имеет права глушить процессы как побочный эффект.
+        mode_resolution = daemon.orchestrator.resolve_active_mode()
         status = {
             "daemon": "AutonomousEvolutionDaemon",
             "state": "IDLE / ARMED",
             "enabled": daemon.enabled,
+            "active_mode": mode_resolution["mode"],
+            "mode_source": mode_resolution["source"],
+            "background_allowed": mode_resolution["mode"] != MODE_PROD_EVO,
             "idempotency_gate": True,
             "shrink_only_active": True,
             "quorum_perspectives": 3,
-            "verified_invariants": "13/13 BIBLE.md",
+            "verified_invariants": "15/15 BIBLE.md",
         }
         print(json.dumps(status, indent=2, ensure_ascii=False))
         return 0

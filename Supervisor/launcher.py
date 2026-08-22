@@ -51,22 +51,27 @@ class SupervisorLauncher:
     """
 
     def __init__(self, workspace_root: Optional[Path] = None) -> None:
-        self.workspace_root = workspace_root or Path.cwd()
+        self.workspace_root = (workspace_root or Path.cwd()).resolve()
+        # Раньше PID_STATE_FILE резолвился относительно cwd процесса, а не
+        # workspace_root: SupervisorLauncher(workspace_root=ROOT_DIR),
+        # который использует Core/server.py, читал не тот реестр, если демон
+        # запущен из другого рабочего каталога — список PID оказывался пуст.
+        self.pid_state_file = self.workspace_root / PID_STATE_FILE
         self.active_pids: List[int] = self._load_active_pids()
 
     def _load_active_pids(self) -> List[int]:
         """Загрузка активных PID дочерних процессов из файла состояния."""
-        if PID_STATE_FILE.exists():
+        if self.pid_state_file.exists():
             try:
-                data = json.loads(PID_STATE_FILE.read_text(encoding="utf-8"))
+                data = json.loads(self.pid_state_file.read_text(encoding="utf-8"))
                 return data.get("pids", [])
             except Exception as e:
-                logger.warning(f"Не удалось прочитать {PID_STATE_FILE}: {e}")
+                logger.warning(f"Не удалось прочитать {self.pid_state_file}: {e}")
         return []
 
     def _save_active_pids(self) -> None:
         """Сохранение активных PID дочерних процессов."""
-        PID_STATE_FILE.write_text(
+        self.pid_state_file.write_text(
             json.dumps({"pids": self.active_pids, "updated_at": datetime.datetime.now().isoformat()}, indent=2),
             encoding="utf-8"
         )
@@ -100,6 +105,37 @@ class SupervisorLauncher:
         logger.info(f"Аварийный останов завершен. Остановлено процессов: {stopped_count}. Возврат кода 10.")
         return 10
 
+    def terminate_background(self, reason: str = "background process termination") -> Dict[str, object]:
+        """
+        Точечная остановка ФОНОВЫХ процессов сигналом SIGTERM — требование
+        оператора 5.1.1: в режиме [prod_evo] демон непрерывной эволюции
+        обязан отключаться, высвобождая ресурсы. В отличие от panic_stop —
+        не аварийный останов всей системы, а плановое освобождение
+        реестра при переключении режима.
+        """
+        logger.warning(f"Останов фоновых процессов (SIGTERM). Причина: {reason}")
+        registered = list(self.active_pids)
+        terminated = 0
+        for pid in registered:
+            try:
+                os.kill(pid, signal.SIGTERM)
+                logger.info(f"Процесс {pid} остановлен сигналом SIGTERM.")
+                terminated += 1
+            except ProcessLookupError:
+                logger.debug(f"Процесс {pid} уже не существует.")
+            except Exception as ex:
+                logger.error(f"Ошибка при остановке процесса {pid}: {ex}")
+
+        self.active_pids.clear()
+        self._save_active_pids()
+
+        return {
+            "signal": "SIGTERM",
+            "reason": reason,
+            "registered_pids": registered,
+            "terminated_count": terminated,
+        }
+
     def start_runtime(self, mode: str = "project") -> None:
         """
         Запуск изменяемого рантайма Task Runtime в изолированном дочернем процессе.
@@ -131,6 +167,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Supervisor Process Lifecycle & Panic Controller")
     parser.add_argument("--start", action="store_true", help="Запуск агента в фоновом процессе")
     parser.add_argument("--panic-stop", action="store_true", help="Экстренная внеполосная остановка всех процессов")
+    parser.add_argument("--terminate-background", action="store_true", help="Плановая остановка фоновых процессов сигналом SIGTERM (режим [prod_evo])")
     parser.add_argument("--reason", type=str, default="CLI trigger", help="Причина экстренной остановки")
     parser.add_argument("--status", action="store_true", help="Диагностический статус супервизора")
     parser.add_argument("--mode", type=str, default="project", choices=["project", "agent"], help="Режим иерархии")
@@ -141,6 +178,9 @@ def main() -> None:
     if args.panic_stop:
         exit_code = launcher.panic_stop(reason=args.reason)
         sys.exit(exit_code)
+    elif args.terminate_background:
+        report = launcher.terminate_background(reason=args.reason)
+        print(json.dumps(report, indent=2, ensure_ascii=False))
     elif args.status:
         status_info = launcher.get_status()
         print(json.dumps(status_info, indent=2, ensure_ascii=False))

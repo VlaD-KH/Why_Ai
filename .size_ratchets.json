@@ -24,16 +24,16 @@
     "Eye/Dashboard.tsx": 29988,
     "Eye/TelemetryDock.tsx": 10597,
     "Supervisor/classify_diff.py": 18995,
-    "Supervisor/CommitGate.py": 5562,
-    "Supervisor/EvolutionDaemon.py": 6883,
+    "Supervisor/CommitGate.py": 8313,
+    "Supervisor/EvolutionDaemon.py": 16454,
     "Supervisor/guard-policy-plane.sh": 2245,
-    "Supervisor/launcher.py": 6694,
+    "Supervisor/launcher.py": 10173,
     "Supervisor/miniyaml.py": 8376,
     "Supervisor/QuorumReviewer.py": 8847,
-    "Supervisor/SizeRatchets.py": 6621,
-    "Supervisor/WorkspaceOrchestrator.py": 6389,
+    "Supervisor/SizeRatchets.py": 11817,
+    "Supervisor/WorkspaceOrchestrator.py": 9559,
     "Supervisor/WorktreeSandbox.py": 7152,
-    "Supervisor/Constitution/BIBLE.md": 6095,
+    "Supervisor/Constitution/BIBLE.md": 7888,
     "tests/test_classify_diff.py": 2067,
     "tests/test_commit_gate.py": 1918,
     "tests/test_context_fit.py": 1237,
@@ -72,7 +72,7 @@
     "tests/test_mcp_connectors.py": 4889,
     "Tool/connectors/github_connector.py": 4807,
     "Tool/connectors/postgres_connector.py": 6267,
-    "Tool/connectors/telegram_connector.py": 3531,
+    "Tool/connectors/telegram_connector.py": 22123,
     "Tool/connectors/__init__.py": 181,
     "docs/legacy_todo_audit.md": 7037,
     "docs/Иерархия каталогов и топология Hierarchy v3 +PRD v1.0.md": 11221,
@@ -109,5 +109,56 @@
     "docs/Why_Ai v1.1.0-Gold.md": 8708,
     "docs/Вариант 1 check_file() со шлюзом.md": 4822,
     "docs/final_vision/06-self-evo-audit.md": 13249
-  }
+  },
+  "rebaselines": [
+    {
+      "path": "Tool/connectors/telegram_connector.py",
+      "old_limit": 3531,
+      "new_limit": 22123,
+      "reason": "Задача 5.0.2: check_file() впервые подключён к CommitGate (2026-08-22). Рост 3531->22123 B — реальный настоящий транспорт (urllib.request), авторизация операторов, экранирование MarkdownV2 и 40 юнит-тестов в этом же файле-заглушке, где раньше не было ни одного сетевого вызова. Прежний лимит зафиксировал размер пустышки, а не бюджет модуля.",
+      "at": "2026-08-22T08:02:41.714870+00:00"
+    },
+    {
+      "path": "Supervisor/Constitution/BIBLE.md",
+      "old_limit": 6095,
+      "new_limit": 7888,
+      "reason": "Задача 5.0.2: check_file() впервые подключён к CommitGate (2026-08-22). Рост 6095->7888 B — добавлены Принципы 14 (нулевая утечка учётных данных) и 15 (изоляция исходящего сетевого доступа), закрывающие дыры Конституции, найденные аудитом self-evo. Прежний лимит был зафиксирован до появления этих принципов.",
+      "at": "2026-08-22T08:02:42.031469+00:00"
+    },
+    {
+      "path": "Supervisor/launcher.py",
+      "old_limit": 6694,
+      "new_limit": 10173,
+      "reason": "2026-08-22: фикс UTF-8 консоли (reconfigure stdout/stderr), фикс резолва PID-реестра относительно workspace_root вместо cwd, новый terminate_background() и --terminate-background CLI (Задача 5.1.1, SIGTERM для prod_evo).",
+      "at": "2026-08-22T08:03:54.399060+00:00"
+    },
+    {
+      "path": "Supervisor/CommitGate.py",
+      "old_limit": 5562,
+      "new_limit": 8313,
+      "reason": "2026-08-22: extract_changed_files() — список файлов теперь берётся из заголовков реального диффа, а не из захардкоженного литерала; интеграция SizeRatchetsManager.check_paths() в stage_preflight (Задача 5.0.1); фикс timestamp в verify_and_merge (было str(Path.cwd()).",
+      "at": "2026-08-22T08:03:54.729148+00:00"
+    },
+    {
+      "path": "Supervisor/SizeRatchets.py",
+      "old_limit": 6621,
+      "new_limit": 11817,
+      "reason": "2026-08-22: check_file(persist=) для гейт-режима без побочных эффектов, check_paths() для структурного списка нарушителей, rebaseline() с обязательной причиной, фикс нормализации путей (lstrip('./') ломал .github/...), самоисключение реестра из record_baseline (Задача 5.0.1).",
+      "at": "2026-08-22T08:03:55.063849+00:00"
+    },
+    {
+      "path": "Supervisor/EvolutionDaemon.py",
+      "old_limit": 6883,
+      "new_limit": 16454,
+      "reason": "2026-08-22: enforce_mode_policy() и гейт режима в run_evolution_cycle (Задача 5.1.1, SIGTERM для prod_evo); changed_files выводится из кандидатного диффа, а не из литерала; ratchet_verification вместо безусловного record_baseline(); --enforce-mode/--status CLI.",
+      "at": "2026-08-22T08:03:55.387287+00:00"
+    },
+    {
+      "path": "Supervisor/WorkspaceOrchestrator.py",
+      "old_limit": 6389,
+      "new_limit": 9559,
+      "reason": "2026-08-22: resolve_active_mode() — единственный источник истины о режиме из why_ai_config.yaml (решение оператора, Вопрос 8: YAML, не .ai_workspace_state.json), константы MODE_SELF_EVO/MODE_PROD_EVO.",
+      "at": "2026-08-22T08:03:55.720871+00:00"
+    }
+  ]
 }

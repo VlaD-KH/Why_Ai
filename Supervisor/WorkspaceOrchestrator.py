@@ -14,8 +14,24 @@ import sys
 from pathlib import Path
 from typing import Dict, Any, Optional
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from miniyaml import parse_yaml
+except ImportError:
+    from Supervisor.miniyaml import parse_yaml  # type: ignore
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] [ORCHESTRATOR] %(message)s")
 logger = logging.getLogger("WorkspaceOrchestrator")
+
+# Вокабуляр режима, как он записан в why_ai_config.yaml (system.active_mode).
+# Отличается от вокабуляра switch_mode()/topology ("agent"/"project") —
+# это исторически два разных словаря для одного понятия; здесь — тот,
+# которым оперирует манифест.
+MODE_SELF_EVO = "self_evo"
+MODE_PROD_EVO = "prod_evo"
+# Fail-closed (Принцип 2): без явного и распознанного self_evo фоновая
+# генерация выключена, а не включена по умолчанию.
+DEFAULT_ACTIVE_MODE = MODE_PROD_EVO
 
 
 class WorkspaceOrchestrator:
@@ -109,6 +125,39 @@ class WorkspaceOrchestrator:
         self.state_file.write_text(json.dumps(state_payload, indent=2, ensure_ascii=False), encoding="utf-8")
         logger.info(f"Режим переключен на: {topology['mode']} ({topology['hierarchy']})")
         return state_payload
+
+    def resolve_active_mode(self) -> Dict[str, Any]:
+        """
+        Единственный источник истины о режиме — `system.active_mode` в
+        `why_ai_config.yaml`. `.ai_workspace_state.json` НЕ читается для
+        этого решения и никак на него не влияет.
+
+        Решение оператора, 2026-08-22: агент физически не может отредактировать
+        YAML (зона R, требует человека), но может дописать state.json через
+        switch_mode()/`POST /api/mode` (зона E de facto — эндпоинт открыт).
+        Если бы режим, определяющий фоновую генерацию, читался из state.json,
+        агент мог бы самовольно переключиться из целевого продуктового режима
+        в self_evo. YAML под контролем супервизора — этот метод его не
+        переопределяет и не смешивает с состоянием.
+
+        Не имеет побочных эффектов: не пишет и не создаёт state.json.
+        """
+        conf_path = self.workspace_root / "why_ai_config.yaml"
+        if conf_path.exists():
+            try:
+                conf = parse_yaml(conf_path.read_text(encoding="utf-8"))
+                raw = str((conf.get("system") or {}).get("active_mode", "")).strip().lower()
+                if raw in (MODE_SELF_EVO, MODE_PROD_EVO):
+                    return {"mode": raw, "source": "why_ai_config.yaml:system.active_mode"}
+                if raw:
+                    logger.warning(
+                        f"why_ai_config.yaml: нераспознанный active_mode={raw!r} "
+                        f"(например, задокументированный, но не реализованный "
+                        f"'manual_override') — fail-closed к {DEFAULT_ACTIVE_MODE}"
+                    )
+            except Exception as e:
+                logger.warning(f"Ошибка чтения why_ai_config.yaml при резолве режима: {e}")
+        return {"mode": DEFAULT_ACTIVE_MODE, "source": "default"}
 
     def get_current_topology(self) -> Dict[str, Any]:
         """Получение текущего состояния топологии и рангов."""

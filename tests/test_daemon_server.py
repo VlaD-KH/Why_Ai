@@ -42,16 +42,42 @@ class TestDaemonServer(unittest.TestCase):
         conn.close()
 
     def test_api_swarm_tasks_endpoint(self):
-        """Проверка получения Swarm Task-Tree от /api/swarm/tasks."""
+        """Дерево роя обязано отражать реальные git worktree-песочницы, а не литерал.
+
+        Регрессия: subagents был захардкожен (scout-01/child-01/arbitrator-01),
+        никак не связан с Supervisor.WorktreeSandbox.list_sandboxes() — см.
+        docs/session_archive/2026-08-22-gate-wiring-and-telegram-audit/state.md,
+        пункт 5.1.2 в docs/final_vision/03-roadmap.md.
+        """
+        from Supervisor.WorktreeSandbox import WorktreeSandboxManager
+        from Supervisor.WorkspaceOrchestrator import WorkspaceOrchestrator
+
+        root = Path(__file__).resolve().parent.parent
+        manager = WorktreeSandboxManager(workspace_root=root)
+        self.addCleanup(lambda: manager.remove_sandbox("swarmtest-verify"))
+        sandbox = manager.create_sandbox(task_id="swarmtest-verify")
+
         conn = http.client.HTTPConnection("127.0.0.1", TEST_PORT, timeout=3)
         conn.request("GET", "/api/swarm/tasks")
         resp = conn.getresponse()
         self.assertEqual(resp.status, 200)
         data = json.loads(resp.read().decode("utf-8"))
-        self.assertEqual(data["swarm_state"], "ACTIVE / ARMED")
-        self.assertIn("subagents", data)
-        self.assertGreaterEqual(len(data["subagents"]), 3)
         conn.close()
+
+        self.assertIn("subagents", data)
+        real_ids = {a["id"] for a in data["subagents"]}
+
+        # Никаких выдуманных агентов, которых на самом деле нет.
+        fake_ids = {"scout-01", "child-01", "arbitrator-01"}
+        self.assertFalse(fake_ids & real_ids, "Дерево роя всё ещё содержит выдуманных агентов")
+
+        # Реально созданная песочница обязана появиться в дереве.
+        self.assertIn(sandbox["task_id"], real_ids)
+
+        # mode обязан приходить из единственного источника истины
+        # (WorkspaceOrchestrator.resolve_active_mode), а не из литерала "self_evo".
+        expected_mode = WorkspaceOrchestrator(workspace_root=root).resolve_active_mode()["mode"]
+        self.assertEqual(data["root_orchestrator"]["mode"], expected_mode)
 
     def test_api_identity_endpoint(self):
         """Проверка получения Living Identity от /api/identity."""

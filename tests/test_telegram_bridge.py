@@ -357,5 +357,39 @@ class TestDispatchAction(unittest.TestCase):
         self.assertEqual(reply, action_result["reply"])
 
 
+class TestDispatchActionAgainstRealServer(unittest.TestCase):
+    """Регрессия: default opener обязан использовать правильный HTTP-метод.
+
+    Юнит-тесты с фейковым opener'ом не видят разницу между GET и POST —
+    они принимают любой вызов одинаково. Реальный Core/server.py
+    регистрирует /api/status только под GET (do_GET) и /api/panic только
+    под POST (do_POST); при перепутанном методе получаем 404, а
+    dispatch_action("GET_STATUS") по умолчанию слал POST. Поймано живой
+    smoke-проверкой, не юнит-тестами.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.port = TEST_PORT + 1
+        cls.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", cls.port), ControlApiHandler)
+        cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
+        cls.thread.start()
+        time.sleep(0.3)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+
+    def test_get_status_uses_the_default_opener_correctly(self):
+        reply = dispatch_action({"action": "GET_STATUS"}, backend_base_url=f"http://127.0.0.1:{self.port}")
+        self.assertIn("RUNNING", reply)
+
+    def test_trigger_panic_uses_the_default_opener_correctly(self):
+        reply = dispatch_action({"action": "TRIGGER_PANIC"}, backend_base_url=f"http://127.0.0.1:{self.port}")
+        self.assertIn("подтверждён", reply)
+        self.assertNotIn("НЕ подтверждён", reply)
+
+
 if __name__ == "__main__":
     unittest.main()

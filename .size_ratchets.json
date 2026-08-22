@@ -100,6 +100,14 @@
     "docs/final_vision/04-todo.md": 11354,
     "docs/final_vision/05-risks.md": 12553,
     "docs/final_vision/README.md": 6644,
-    "tests/test_telegram_connector.py": 25951
+    "tests/test_telegram_connector.py": 25951,
+    "docs/agent_v.0.2.1.md": 1568,
+    "docs/implementation_plan_v.0.2.1.md": 8963,
+    "docs/ui_master_schema.js": 6441,
+    "docs/walkthrough_v.0.2.1.md": 5916,
+    "docs/walkthrough_v7.md": 5407,
+    "docs/Why_Ai v1.1.0-Gold.md": 8708,
+    "docs/Вариант 1 check_file() со шлюзом.md": 4822,
+    "docs/final_vision/06-self-evo-audit.md": 13249
   }
 }

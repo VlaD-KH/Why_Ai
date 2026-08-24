@@ -7,6 +7,10 @@ Verifies HTTP REST API status, Swarm Task-Tree, Living Identity, config, mode sw
 import http.client
 import http.server
 import json
+import shutil
+import subprocess
+import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -40,6 +44,26 @@ class TestDaemonServer(unittest.TestCase):
         self.assertEqual(data["status"], "RUNNING")
         self.assertIn("verified_tests", data)
         conn.close()
+
+    @unittest.expectedFailure
+    def test_api_status_no_hardcoded_test_count(self):
+        """verified_tests обязан быть фактическим подсчётом, не литералом.
+
+        @expectedFailure: Core/server.py:118 сейчас жёстко возвращает
+        "32/32 PASS" при 160 реальных тестах (Батч 0.3, Волна 0, зона R —
+        ждёт оператора, см. docs/session_archive/2026-08-23/
+        implementation_plan.md). Тест наблюдался красным против текущей
+        реализации до коммита — это и есть Proof of Falsification, не
+        просто предсказание. Как только Батч 0.3 закроет литерал, unittest
+        отрапортует "unexpected success" (сам по себе провал прогона) —
+        сигнал снять декоратор, а не тихо оставить тест недействующим.
+        """
+        conn = http.client.HTTPConnection("127.0.0.1", TEST_PORT, timeout=3)
+        conn.request("GET", "/api/status")
+        resp = conn.getresponse()
+        data = json.loads(resp.read().decode("utf-8"))
+        conn.close()
+        self.assertNotIn("32/32", data["verified_tests"])
 
     def test_api_swarm_tasks_endpoint(self):
         """Дерево роя обязано отражать реальные git worktree-песочницы, а не литерал.
@@ -226,6 +250,53 @@ class TestDaemonServer(unittest.TestCase):
         self.assertEqual(resp.status, 200)
         self.assertIn("text/html", resp.getheader("Content-Type", ""))
         conn.close()
+
+
+# /api/tests запускает subprocess.run([..., "-m", "unittest", "discover",
+# "-s", "tests", ...]) — то есть заново находит и запускает ВЕСЬ каталог
+# tests/, включая файл, откуда пришёл HTTP-запрос. Пойман вживую реальный
+# инфраструктурный дефект: тест внутри tests/, бьющий по живому /api/tests
+# через HTTP, рекурсивно пересоздаёт сам себя на каждом уровне вложенности
+# (discover находит этот же тестовый метод, тот снова шлёт HTTP-запрос,
+# который снова спавнит discover...) — цепочка блокирующих subprocess.run
+# длиной в несколько уровней, ~60+ секунд до таймаута вместо честной ошибки.
+# Подтверждено минимальным репро вне unittest-раннера (тот же эффект без
+# самого фреймворка тестов) — это свойство Core/server.py:223-234, не
+# особенность гарнеса. Не тестируется отдельно здесь: правка — зона R, вне
+# Батча 0.2. Вместо живого HTTP-удара по self-referencing tests/ проверяем
+# сам факт, ради которого была правка дашборда: unittest.TextTestRunner
+# пишет итоговую строку в stderr, не в stdout — против изолированной
+# временной директории, без риска самозапуска.
+class TestUnittestSummaryStream(unittest.TestCase):
+
+    def test_unittest_writes_summary_to_stderr_not_stdout(self):
+        """Регрессия, пойманная не при написании, а при живой проверке в
+        браузере (Eye/dashboard.html, Батч 0.1): дашборд искал "Ran N tests"
+        в stdout ответа /api/tests и всегда получал "?/?", потому что
+        unittest.TextTestRunner печатает итоговую строку в stderr. Тест
+        воспроизводит тот же факт против настоящего `python -m unittest
+        discover`, изолированной временной директорией — без обращения к
+        /api/tests и без риска самозапуска (см. комментарий выше класса).
+        """
+        tmp_dir = tempfile.mkdtemp(prefix="unittest-stream-check-")
+        try:
+            (Path(tmp_dir) / "test_trivial.py").write_text(
+                "import unittest\n"
+                "class T(unittest.TestCase):\n"
+                "    def test_ok(self):\n"
+                "        self.assertTrue(True)\n",
+                encoding="utf-8",
+            )
+            res = subprocess.run(
+                [sys.executable, "-m", "unittest", "discover", "-s", tmp_dir, "-p", "test_*.py"],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+            )
+            self.assertEqual(res.returncode, 0)
+            self.assertNotRegex(res.stdout, r"Ran \d+ tests?",
+                                 "unittest сменил поведение и теперь пишет итог в stdout — обновить дашборд")
+            self.assertRegex(res.stderr, r"Ran 1 tests?")
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

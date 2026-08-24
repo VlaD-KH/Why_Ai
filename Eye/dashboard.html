@@ -240,8 +240,8 @@ hr{border:none; border-top:1px solid var(--line); margin:34px 0}
   <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; margin-bottom:20px; border-bottom:1px solid #262a30; padding-bottom:18px;">
     <div>
       <div style="display:flex; items-center; gap:8px; margin-bottom:4px;">
-        <span style="background:rgba(240,168,104,0.15); color:#f0a868; font-family:var(--mono); font-size:10px; padding:2px 7px; border-radius:4px; font-weight:bold; text-transform:uppercase;">Self-Evo Framework v6.105.1</span>
-        <span style="background:rgba(31,111,74,0.25); color:#8fce9b; font-family:var(--mono); font-size:10px; padding:2px 7px; border-radius:4px; font-weight:bold; border:1px solid rgba(31,111,74,0.4);">● Supervisor Active</span>
+        <span id="hdrVersion" style="background:rgba(240,168,104,0.15); color:#f0a868; font-family:var(--mono); font-size:10px; padding:2px 7px; border-radius:4px; font-weight:bold; text-transform:uppercase;">Self-Evo Framework —</span>
+        <span id="hdrSupervisor" style="background:rgba(100,100,100,0.25); color:#7d8590; font-family:var(--mono); font-size:10px; padding:2px 7px; border-radius:4px; font-weight:bold; border:1px solid rgba(100,100,100,0.4);">● Бэкенд недоступен</span>
       </div>
       <h2 style="color:#fff; font-size:22px; margin:0; font-weight:700; letter-spacing:-0.02em;">
         Интерактивная Карта Развития & SDLC Монитор
@@ -266,20 +266,23 @@ hr{border:none; border-top:1px solid var(--line); margin:34px 0}
   </div>
 
   <!-- Блок оповещения о завершении Фазы 2 -->
-  <div style="background:linear-gradient(90deg, rgba(16,185,129,0.15) 0%, rgba(37,99,235,0.15) 100%); border:1px solid rgba(16,185,129,0.4); border-radius:10px; padding:14px 18px; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+  <div style="background:linear-gradient(90deg, rgba(240,168,104,0.15) 0%, rgba(37,99,235,0.15) 100%); border:1px solid rgba(240,168,104,0.4); border-radius:10px; padding:14px 18px; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
     <div>
       <div style="display:flex; align-items:center; gap:8px;">
-        <span style="font-size:16px;">🏆</span>
-        <strong style="color:#fff; font-size:13.5px;">Фазы 1 & 2: Worktree Isolation & Multi-Model Quorum — Успешно Завершены (100%)</strong>
+        <span style="font-size:16px;">📊</span>
+        <strong style="color:#fff; font-size:13.5px;">Каркас построен. Цикл самоэволюции разомкнут (1/9 звеньев). Актуальный статус — roadmap.md</strong>
       </div>
       <p style="margin:4px 0 0; font-size:12px; color:#a0a6b0; max-width:650px;">
-        Изолированные Git Worktrees, мультимодельный арбитраж Claudexor с правом вето (Angle Diversity), двухэтапная проверка SHA-256 и 26/26 доказательных тестов верифицированы.
+        Supervisor, Worktrees, QuorumReviewer, SizeRatchets — код есть и покрыт тестами. Предложитель, применитель, откат, ledger — не реализованы.
       </p>
     </div>
-    <div style="display:flex; gap:8px;">
-      <span style="background:rgba(16,185,129,0.25); color:#34d399; font-family:var(--mono); font-size:11px; padding:6px 12px; border-radius:6px; border:1px solid #10b981; font-weight:bold;">
-        ✓ 26/26 Tests PASS
+    <div style="display:flex; gap:8px; align-items:center;">
+      <span id="hdrTestCount" style="background:rgba(100,100,100,0.25); color:#7d8590; font-family:var(--mono); font-size:11px; padding:6px 12px; border-radius:6px; border:1px solid #7d8590; font-weight:bold;">
+        ✓ —/— Tests
       </span>
+      <button id="hdrRunTestsBtn" onclick="runTestsAction()" style="background:#1c1f25; border:1px solid #363b43; color:#dfe3e8; font-family:var(--mono); font-size:11px; padding:6px 10px; border-radius:6px; cursor:pointer; font-weight:bold;">
+        ▶ Прогнать тесты
+      </button>
       <span style="background:rgba(37,99,235,0.25); color:#60a5fa; font-family:var(--mono); font-size:11px; padding:6px 12px; border-radius:6px; border:1px solid #2563eb; font-weight:bold;">
         ● Quorum Armed
       </span>
@@ -502,23 +505,20 @@ hr{border:none; border-top:1px solid var(--line); margin:34px 0}
 
   <!-- ==================== TAB 3: ЖИВОЙ ЧЕК-ЛИСТ ==================== -->
   <div id="deck-todo" class="deck-pane" style="display:none;">
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
-      
+    <p style="font-size:11.5px; color:#7d8590; margin:0 0 14px;">
+      Ниже — фактические feature-флаги из <code>why_ai_config.yaml</code> через
+      <code>GET /api/config</code>, не список задач: пер-задачного API нет, и
+      выдумывать его не будем. Полная матрица задач и критериев приёмки —
+      <code>todo.md</code>.
+    </p>
+    <div id="todoContainer" style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+
       <div style="background:#181b22; border:1px solid #262a30; border-radius:10px; padding:16px;">
         <h4 style="color:#60a5fa; font-size:13px; margin:0 0 10px; font-family:var(--mono);">
           🛡️ /Supervisor & Quorum Layer (Zone P/R)
         </h4>
-        <div style="display:flex; flex-direction:column; gap:8px; font-size:12px;">
-          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-01: Конституция BIBLE.md (13 Принципов)</label>
-          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-02: launcher.py (/panic-stop code 10)</label>
-          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-03: guard-policy-plane.sh (Onboarding)</label>
-          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-04: classify_diff.py (MAX Risk & self-check)</label>
-          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-05: WorkspaceOrchestrator.py (Hierarchy v3)</label>
-          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-06: SizeRatchets.py (shrink-only)</label>
-          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-07: WorktreeSandbox.py (Изоляция песочниц)</label>
-          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-08: QuorumReviewer.py (Angle Diversity Veto)</label>
-          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-09: CommitGate.py (Preflight & Re-fingerprint)</label>
-          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-SUP-10: EvolutionDaemon.py (Фоновый рекурсивный контур)</label>
+        <div id="todoSupervisor" style="display:flex; flex-direction:column; gap:8px; font-size:12px;">
+          <div style="color:#7d8590; font-family:var(--mono); font-size:11px;">Загрузка из /api/config…</div>
         </div>
       </div>
 
@@ -526,18 +526,16 @@ hr{border:none; border-top:1px solid var(--line); margin:34px 0}
         <h4 style="color:#fdba74; font-size:13px; margin:0 0 10px; font-family:var(--mono);">
           🧠 /Core, /Tool & /tests Layer
         </h4>
-        <div style="display:flex; flex-direction:column; gap:8px; font-size:12px;">
-          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-COR-01: ContextFit.py (Граф импортов)</label>
-          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-COR-02: MetaOverPatch.py (failures.jsonl)</label>
-          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-COR-03: PolicyDriftVector.py (Векторный дрейф)</label>
-          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-COR-04: SummaryChunker.py (Summary-Augmented RAG)</label>
-          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-TOL-01: 9 Manifests agent-skills (+ using-agent-skills)</label>
-          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-TOL-02: FastMCP RPC Server (@mcp.tool)</label>
-          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-EYE-01: Time-Travel Explorer & Dashboard</label>
-          <label style="display:flex; align-items:center; gap:8px; color:#8fce9b;"><input type="checkbox" checked disabled> TASK-TST-01: 30/30 Доказательных тестов (All Phases OK)</label>
+        <div id="todoCoreTool" style="display:flex; flex-direction:column; gap:8px; font-size:12px;">
+          <div style="color:#7d8590; font-family:var(--mono); font-size:11px;">Загрузка из /api/config…</div>
         </div>
       </div>
 
+    </div>
+    <div id="todoBanner" style="display:none; background:#181b22; border:1px solid #f0a868; border-radius:10px; padding:16px; margin-top:12px; text-align:center;">
+      <span style="color:#f0a868; font-family:var(--mono); font-size:12px;">
+        ⚠️ Бэкенд недоступен — конфигурация не может быть загружена. Актуальный статус: <code>todo.md</code>
+      </span>
     </div>
   </div>
 
@@ -614,6 +612,11 @@ hr{border:none; border-top:1px solid var(--line); margin:34px 0}
           <span style="background:#1c1f25; padding:3px 8px; border-radius:4px; border:1px solid #363b43; color:#f0a868;">Shrink-Only Ratchets: 72 Files</span>
         </div>
       </div>
+
+      <!-- Реальный результат по завершении Auto-Replay — цифры выше в
+           snapTests историчны (мок по версиям), эта строка не подделывается,
+           она либо содержит настоящий /api/tests, либо не показывается. -->
+      <div id="replayLiveResult" style="display:none; margin-top:10px; padding:10px 14px; background:#181b22; border:1px solid #363b43; border-radius:8px; font-family:var(--mono); font-size:11px; color:#94a3b8;"></div>
 
     </div>
   </div>
@@ -994,18 +997,21 @@ hr{border:none; border-top:1px solid var(--line); margin:34px 0}
           <span style="font-family:var(--mono); font-size:10px; color:#34d399;">● SSE Stream Active</span>
         </div>
 
-        <!-- Узел 1: Root Sovereign Orchestrator -->
+        <!-- Узел 1: Root Sovereign Orchestrator — рендерится из /api/swarm/tasks
+             .root_orchestrator (Core/server.py:158-165), не статика.
+             status/mode оттуда живые; описательный текст ниже — архитектурная
+             роль, не телеметрия, оставлен как есть. -->
         <div style="background:#181b22; border:1px solid #38bdf8; border-radius:8px; padding:14px; margin-bottom:12px; position:relative;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start;">
             <div>
               <span style="font-family:var(--mono); font-size:9.5px; background:rgba(56,189,248,0.2); color:#38bdf8; padding:2px 5px; border-radius:3px; font-weight:bold;">RANK 1 • SOVEREIGN ROOT</span>
-              <h5 style="margin:4px 0 2px; color:#fff; font-size:13px;">Why_Ai Core Sovereign Orchestrator</h5>
+              <h5 id="rootOrchRole" style="margin:4px 0 2px; color:#fff; font-size:13px;">Why_Ai Core Sovereign Orchestrator</h5>
               <div style="font-size:11px; color:#7d8590;">Управление целями, непрерывным контекстом и распределением задач субагентам.</div>
             </div>
-            <span style="font-family:var(--mono); font-size:10px; color:#34d399; background:rgba(16,185,129,0.15); padding:2px 6px; border-radius:4px;">RUNNING</span>
+            <span id="rootOrchStatus" style="font-family:var(--mono); font-size:10px; color:#7d8590; background:rgba(100,100,100,0.15); padding:2px 6px; border-radius:4px;">—</span>
           </div>
           <div style="margin-top:8px; font-family:var(--mono); font-size:10px; color:#94a3b8; display:flex; gap:10px;">
-            <span>📁 Context: <b style="color:#38bdf8;">Core/identity.md (Pinned)</b></span>
+            <span>⚙️ Режим: <b id="rootOrchMode" style="color:#38bdf8;">—</b></span>
             <span>🔒 Policy Floor: <b style="color:#34d399;">Supervisor Zone P/R</b></span>
           </div>
         </div>
@@ -1240,7 +1246,7 @@ hr{border:none; border-top:1px solid var(--line); margin:34px 0}
       const interval = setInterval(() => {
         if (step >= keys.length) {
           clearInterval(interval);
-          alert('🏁 Воспроизведение завершено: Система полностью саморазвернута до актуальной версии v3.0.0 (32/32 тестов PASS)!');
+          showReplayLiveResult();
           return;
         }
         const k = keys[step];
@@ -1554,15 +1560,178 @@ hr{border:none; border-top:1px solid var(--line); margin:34px 0}
             if (countEl) {
               countEl.innerText = `${d.active_sandboxes_count || 0} активных (${d.lifecycle_clean ? 'Clean' : 'Pruning needed'})`;
             }
+            const root = d.root_orchestrator || {};
+            const roleEl = document.getElementById('rootOrchRole');
+            const statusEl = document.getElementById('rootOrchStatus');
+            const modeEl = document.getElementById('rootOrchMode');
+            if (roleEl && root.role) roleEl.innerText = root.role;
+            if (statusEl && root.status) {
+              statusEl.innerText = root.status;
+              statusEl.style.color = '#34d399';
+              statusEl.style.background = 'rgba(16,185,129,0.15)';
+            }
+            if (modeEl && root.mode) modeEl.innerText = root.mode;
             renderSwarmChildNodes(d.subagents);
           })
           .catch(() => {});
       } else {
         const idEl = document.getElementById('identityPreviewText');
         const spEl = document.getElementById('scratchpadPreviewText');
-        if (idEl) idEl.innerText = 'Why_Ai Sovereign Continuous Biography (13 Principles of BIBLE.md Pinned in ContextFit).';
-        if (spEl) spEl.innerText = 'Active CoT Scratchpad: Gold v1.1.0 Architecture & Feature Flags Armed.';
+        if (idEl) idEl.innerText = '[file:// mode] Откройте через сервер: python Core/server.py';
+        if (spEl) spEl.innerText = '[file:// mode] Данные недоступны без бэкенда.';
+        const banner = document.getElementById('todoBanner');
+        if (banner) banner.style.display = 'block';
       }
+    }
+
+    // Загрузка шапки из /api/status
+    function loadStatusFromAPI() {
+      if (!(window.location && window.location.protocol.startsWith('http'))) return;
+      fetch('/api/status')
+        .then(r => r.json())
+        .then(d => {
+          const verEl = document.getElementById('hdrVersion');
+          const supEl = document.getElementById('hdrSupervisor');
+          if (verEl && d.version) {
+            verEl.innerText = 'Self-Evo Framework ' + d.version;
+          }
+          // supervisor_status \u2014 \u043f\u043b\u043e\u0441\u043a\u043e\u0433\u043e \u043f\u043e\u043b\u044f \u0432 /api/status \u043d\u0435\u0442, \u0441\u0442\u0430\u0442\u0443\u0441 \u043b\u0435\u0436\u0438\u0442
+          // \u0432\u043e \u0432\u043b\u043e\u0436\u0435\u043d\u043d\u043e\u043c supervisor.status (Core/server.py:116).
+          const supStatus = d.supervisor && d.supervisor.status;
+          if (supEl && supStatus) {
+            supEl.innerText = '\u25cf ' + supStatus;
+            supEl.style.background = 'rgba(31,111,74,0.25)';
+            supEl.style.color = '#8fce9b';
+            supEl.style.borderColor = 'rgba(31,111,74,0.4)';
+          }
+          const testEl = document.getElementById('hdrTestCount');
+          if (testEl && d.verified_tests) {
+            testEl.innerText = '\u2713 ' + d.verified_tests;
+            testEl.style.background = 'rgba(16,185,129,0.25)';
+            testEl.style.color = '#34d399';
+            testEl.style.borderColor = '#10b981';
+          }
+        })
+        .catch(() => {
+          console.warn('[DASHBOARD] /api/status unavailable');
+        });
+    }
+
+    // \u041f\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0435\u0442 \u043d\u0430\u0441\u0442\u043e\u044f\u0449\u0438\u0439 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442 /api/tests \u043f\u043e \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u0438\u0438 Auto-Replay,
+    // \u0432\u0437\u0430\u043c\u0435\u043d \u0443\u0431\u0440\u0430\u043d\u043d\u043e\u0433\u043e alert('32/32 PASS'), \u043a\u043e\u0442\u043e\u0440\u044b\u0439 \u0432\u0440\u0430\u043b (\u0411\u0430\u0442\u0447 0.1).
+    function showReplayLiveResult() {
+      const el = document.getElementById('replayLiveResult');
+      if (!el) return;
+      if (!(window.location && window.location.protocol.startsWith('http'))) {
+        el.style.display = 'block';
+        el.innerText = '[file:// mode] \u0420\u0435\u0430\u043b\u044c\u043d\u044b\u0439 \u043f\u0440\u043e\u0433\u043e\u043d \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d \u0431\u0435\u0437 \u0441\u0435\u0440\u0432\u0435\u0440\u0430.';
+        return;
+      }
+      el.style.display = 'block';
+      el.innerText = '\u23f3 \u0420\u0435\u0430\u043b\u044c\u043d\u044b\u0439 \u043f\u0440\u043e\u0433\u043e\u043d tests/ \u2014 \u0432\u044b\u043f\u043e\u043b\u043d\u044f\u0435\u0442\u0441\u044f\u2026';
+      fetch('/api/tests')
+        .then(r => r.json())
+        .then(d => {
+          // unittest пишет итоговую строку "Ran N tests" в stderr, не в
+          // stdout (TextTestRunner по умолчанию) — искать нужно в обоих.
+          const match = /Ran (\d+) test/.exec((d.stdout || '') + (d.stderr || ''));
+          const total = match ? match[1] : '?';
+          el.innerText = d.status === 'PASSED'
+            ? '\u2713 \u0422\u0435\u043a\u0443\u0449\u0435\u0435 \u0440\u0435\u0430\u043b\u044c\u043d\u043e\u0435 \u0441\u043e\u0441\u0442\u043e\u044f\u043d\u0438\u0435: ' + total + '/' + total + ' \u0442\u0435\u0441\u0442\u043e\u0432 PASS (\u043d\u0435 \u0438\u0441\u0442\u043e\u0440\u0438\u0447\u0435\u0441\u043a\u0430\u044f \u0446\u0438\u0444\u0440\u0430 \u0432\u044b\u0448\u0435 \u2014 /api/tests, \u0442\u043e\u043b\u044c\u043a\u043e \u0447\u0442\u043e)'
+            : '\u2717 \u0422\u0435\u043a\u0443\u0449\u0435\u0435 \u0440\u0435\u0430\u043b\u044c\u043d\u043e\u0435 \u0441\u043e\u0441\u0442\u043e\u044f\u043d\u0438\u0435: FAILED (rc=' + d.returncode + ')';
+        })
+        .catch(() => {
+          el.innerText = '\u2717 /api/tests \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d';
+        });
+    }
+
+    // \u0420\u0435\u0430\u043b\u044c\u043d\u044b\u0439 \u043f\u0440\u043e\u0433\u043e\u043d \u0442\u0435\u0441\u0442\u043e\u0432\u043e\u0433\u043e \u043d\u0430\u0431\u043e\u0440\u0430 \u043f\u043e \u043a\u043b\u0438\u043a\u0443 \u2014 /api/tests \u0432\u044b\u043f\u043e\u043b\u043d\u044f\u0435\u0442
+    // unittest discover \u0447\u0435\u0440\u0435\u0437 subprocess \u0438 \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 \u0444\u0430\u043a\u0442\u0438\u0447\u0435\u0441\u043a\u0438\u0439 stdout,
+    // \u043d\u0435 \u043b\u0438\u0442\u0435\u0440\u0430\u043b (Core/server.py:223-234).
+    function runTestsAction() {
+      const testEl = document.getElementById('hdrTestCount');
+      const btn = document.getElementById('hdrRunTestsBtn');
+      if (btn) btn.disabled = true;
+      if (testEl) {
+        testEl.innerText = '\u23f3 \u0412\u044b\u043f\u043e\u043b\u043d\u044f\u0435\u0442\u0441\u044f\u2026';
+        testEl.style.background = 'rgba(240,168,104,0.2)';
+        testEl.style.color = '#f0a868';
+        testEl.style.borderColor = '#f0a868';
+      }
+      fetch('/api/tests')
+        .then(r => r.json())
+        .then(d => {
+          if (!testEl) return;
+          // unittest пишет итоговую строку "Ran N tests" в stderr, не в
+          // stdout (TextTestRunner по умолчанию) — искать нужно в обоих.
+          const match = /Ran (\d+) test/.exec((d.stdout || '') + (d.stderr || ''));
+          const total = match ? match[1] : '?';
+          if (d.status === 'PASSED') {
+            testEl.innerText = '\u2713 ' + total + '/' + total + ' PASS';
+            testEl.style.background = 'rgba(16,185,129,0.25)';
+            testEl.style.color = '#34d399';
+            testEl.style.borderColor = '#10b981';
+          } else {
+            testEl.innerText = '\u2717 FAILED (rc=' + d.returncode + ')';
+            testEl.style.background = 'rgba(157,28,28,0.25)';
+            testEl.style.color = '#ff8080';
+            testEl.style.borderColor = '#9d1c1c';
+          }
+        })
+        .catch(() => {
+          if (testEl) {
+            testEl.innerText = '\u2717 /api/tests \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d';
+            testEl.style.background = 'rgba(157,28,28,0.25)';
+            testEl.style.color = '#ff8080';
+          }
+        })
+        .finally(() => {
+          if (btn) btn.disabled = false;
+        });
+    }
+
+    // Вкладка "Живой чек-лист" — рендерит РЕАЛЬНЫЕ feature-флаги из
+    // why_ai_config.yaml через GET /api/config (Core/server.py:193-205).
+    // Пер-задачного статуса (TASK-SUP-01 и т.д.) в конфиге нет и быть не
+    // может — эти данные существуют только как текст в todo.md, поэтому
+    // здесь не подделывается чек-лист задач, а показывается то, что
+    // действительно можно прочитать вживую.
+    function loadConfigChecklist() {
+      if (!(window.location && window.location.protocol.startsWith('http'))) return;
+      const flag = (label, enabled, extra) => {
+        const color = enabled ? '#8fce9b' : '#7d8590';
+        const mark = enabled ? '●' : '○';
+        return '<div style="display:flex; align-items:center; gap:8px; color:' + color + ';">'
+          + '<span>' + mark + '</span> ' + label + (extra ? ' <span style="color:#7d8590;">(' + extra + ')</span>' : '')
+          + '</div>';
+      };
+      fetch('/api/config')
+        .then(r => r.json())
+        .then(cfg => {
+          const sys = cfg.system || {};
+          const mods = cfg.modules || {};
+          const bg = mods.background_consciousness || {};
+          const supEl = document.getElementById('todoSupervisor');
+          if (supEl) {
+            supEl.innerHTML =
+              flag('Режим: ' + (sys.active_mode || '?'), true)
+              + flag('background_consciousness (EvolutionDaemon)', !!bg.enabled,
+                     bg.enabled ? 'tick ' + bg.tick_interval_seconds + 's' : 'отключён')
+              + flag('idempotency_gate.require_failure_binding', !!(bg.idempotency_gate && bg.idempotency_gate.require_failure_binding));
+          }
+          const coreEl = document.getElementById('todoCoreTool');
+          if (coreEl) {
+            const li = mods.living_identity || {};
+            const sv = mods.swarm_visualizer || {};
+            coreEl.innerHTML =
+              flag('living_identity (Core/identity.md pin)', !!li.enabled)
+              + flag('swarm_visualizer (SSE Task-Tree)', !!sv.enabled);
+          }
+        })
+        .catch(() => {
+          const banner = document.getElementById('todoBanner');
+          if (banner) banner.style.display = 'block';
+        });
     }
 
     // Экспорт в глобальный объект window для надежности инлайн-обработчиков
@@ -1578,6 +1747,8 @@ hr{border:none; border-top:1px solid var(--line); margin:34px 0}
     window.pruneWorktreesAction = pruneWorktreesAction;
     window.triggerEvoCycleAction = triggerEvoCycleAction;
     window.loadIdentityAndSwarmData = loadIdentityAndSwarmData;
+    window.runTestsAction = runTestsAction;
+    window.loadConfigChecklist = loadConfigChecklist;
 
     // Автоматическое закрытие модального окна при клике на оверлей и загрузка данных
     document.addEventListener('DOMContentLoaded', () => {
@@ -1588,6 +1759,8 @@ hr{border:none; border-top:1px solid var(--line); margin:34px 0}
         });
       }
       loadIdentityAndSwarmData();
+      loadStatusFromAPI();
+      loadConfigChecklist();
     });
 
     // Безопасное подключение к потоку событий Daemon API (127.0.0.1:8765)

@@ -41,7 +41,7 @@
     "tests/test_evolution_daemon.py": 857,
     "tests/test_launcher.py": 956,
     "tests/test_mcp_server.py": 1741,
-    "tests/test_meta_over_patch.py": 1055,
+    "tests/test_meta_over_patch.py": 6153,
     "tests/test_policy_drift_vector.py": 1408,
     "tests/test_quorum_reviewer.py": 1881,
     "tests/test_size_ratchets.py": 897,
@@ -159,6 +159,13 @@
       "new_limit": 9559,
       "reason": "2026-08-22: resolve_active_mode() — единственный источник истины о режиме из why_ai_config.yaml (решение оператора, Вопрос 8: YAML, не .ai_workspace_state.json), константы MODE_SELF_EVO/MODE_PROD_EVO.",
       "at": "2026-08-22T08:03:55.720871+00:00"
+    },
+    {
+      "path": "tests/test_meta_over_patch.py",
+      "old_limit": 1055,
+      "new_limit": 6153,
+      "reason": "Задача (run 20260824-083721-run-mvp-py-self-test-0-core-fail, коммит f12ac0f): test_load_and_analyze брал MetaOverPatchEngine(workspace_root=Path('.')) — реальный репозиторий — и требовал >=1 записи в Core/failures.jsonl, который в .gitignore как runtime-состояние и отсутствует на свежем клоне; run_mvp.py --self-test отдавал EXIT=10 на любом чистом чекауте. Рост 1055->6153 B — тест переведён на собственную tempfile-фикстуру (setUp/tearDown), добавлен TestMetaOverPatchWithoutRegistry на фактическое состояние свежего клона (реестр отсутствует), проверки усилены с порога >=1 до точных значений. Правильность доказана тремя мутациями Core/MetaOverPatch.py (наблюдались красными, откачены, в коммит не входят), см. .ai-loop/runs/20260824-083721-run-mvp-py-self-test-0-core-fail/verification.md. Прежний лимит фиксировал размер теста, державшегося на диске автора, а не бюджет покрытия модуля.",
+      "at": "2026-08-24T08:55:17.000322+00:00"
     }
   ]
 }

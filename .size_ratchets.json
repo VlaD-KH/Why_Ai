@@ -37,7 +37,7 @@
     "tests/test_classify_diff.py": 2067,
     "tests/test_commit_gate.py": 1918,
     "tests/test_context_fit.py": 1237,
-    "tests/test_daemon_server.py": 1736,
+    "tests/test_daemon_server.py": 16342,
     "tests/test_evolution_daemon.py": 857,
     "tests/test_launcher.py": 956,
     "tests/test_mcp_server.py": 1741,
@@ -187,6 +187,13 @@
       "new_limit": 19628,
       "reason": "2026-08-24: пункт 5.1.2 (Swarm Task-Tree) снят с чек-листа как невыполненный, хотя server.py:130-177 уже читает реальные WorktreeSandboxManager.list_sandboxes() с коммитов cecf5c5/7d59353/21f2d3a. Отмечен выполненным с точным остатком. Файл уже был за потолком (21250/10053) до этой правки.",
       "at": "2026-08-24T10:26:08.020026+00:00"
+    },
+    {
+      "path": "tests/test_daemon_server.py",
+      "old_limit": 1736,
+      "new_limit": 16342,
+      "reason": "2026-08-24, Батч 0.2 (run 20260824-171122-0-api-0-1-dashboard-html-0-2-doc, коммит d510afc): добавлены test_api_status_no_hardcoded_test_count (@expectedFailure, красный до Батча 0.3) и test_unittest_writes_summary_to_stderr_not_stdout (изолированный, найден при живой проверке /api/tests в браузере — сервер пишет 'Ran N tests' в stderr, не в stdout, и /api/tests рекурсивно самозапускается при живом HTTP-обращении из файла внутри tests/, задокументировано комментарием). Файл уже был за потолком (11329/1736) до этой правки — унаследованный долг из 21 нарушения, обнаруженного при аудите репозитория 2026-08-24, эта правка его не создала.",
+      "at": "2026-08-24T17:40:53.885625+00:00"
     }
   ]
 }

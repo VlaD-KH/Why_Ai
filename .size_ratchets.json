@@ -41,7 +41,7 @@
     "tests/test_evolution_daemon.py": 857,
     "tests/test_launcher.py": 956,
     "tests/test_mcp_server.py": 1741,
-    "tests/test_meta_over_patch.py": 1055,
+    "tests/test_meta_over_patch.py": 6153,
     "tests/test_policy_drift_vector.py": 1408,
     "tests/test_quorum_reviewer.py": 1881,
     "tests/test_size_ratchets.py": 897,

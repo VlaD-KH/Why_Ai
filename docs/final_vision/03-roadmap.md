@@ -204,11 +204,14 @@
       незакрытая часть модуля 2. Сейчас 0 вхождений `SIGTERM` в коде.
       Флаг `background_consciousness` **читается по-настоящему**
       (`EvolutionDaemon.py:88,122`) — это единственный живой флаг в проекте.
-- [ ] **5.1.2 Настоящий Swarm Task-Tree.** `/api/swarm/tasks` отдаёт
-      **выдуманных агентов** (`server.py:139-166`). Реальные источники, которые
-      уже существуют: `WorktreeSandbox.list_sandboxes()`, `Core/failures.jsonl`,
-      возвраты `QuorumReviewer`/`CommitGate`. Флаг `swarm_visualizer` не
-      читается ничем.
+- [x] **5.1.2 Настоящий Swarm Task-Tree — сделано.** `/api/swarm/tasks`
+      (`server.py:130-177`) читает `WorktreeSandboxManager.list_sandboxes()` и
+      отфильтровывает всё, что не лежит под `worktrees/` рабочей области —
+      реальные песочницы, не литерал. Критика ниже была верна на момент
+      написания (2026-08-22), исправлено коммитами `cecf5c5`/`7d59353`/`21f2d3a`.
+      Остаток: флаг `swarm_visualizer` по-прежнему не читается ничем; данные
+      `Core/failures.jsonl` и возвраты `QuorumReviewer`/`CommitGate` в это
+      дерево не подмешаны — только состав активных worktree-песочниц.
 - [x] **Multi-Harness Class 1/2/3** — уже реализовано в `QuorumReviewer.py`
       (Class 1 Executor / Class 2 Architect / Class 3 Arbitrator, логгер
       `[MULTI-HARNESS]`). Архитектурное условие оператора соблюдено.

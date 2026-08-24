@@ -3,10 +3,10 @@
   "principle": "shrink-only",
   "limits": {
     "function_list.md": 7790,
-    "README.md": 5712,
-    "roadmap.md": 5626,
+    "README.md": 7076,
+    "roadmap.md": 12643,
     "run_mvp.py": 5542,
-    "todo.md": 6373,
+    "todo.md": 11604,
     "Core/ContextFit.py": 8390,
     "Core/MetaOverPatch.py": 6098,
     "Core/PolicyDriftVector.py": 6974,
@@ -96,7 +96,7 @@
     "docs/Оценка. Проверка готовности и инструкция для польз.md": 8633,
     "docs/final_vision/01-audit.md": 17744,
     "docs/final_vision/02-architecture.md": 13071,
-    "docs/final_vision/03-roadmap.md": 10053,
+    "docs/final_vision/03-roadmap.md": 19628,
     "docs/final_vision/04-todo.md": 11354,
     "docs/final_vision/05-risks.md": 12553,
     "docs/final_vision/README.md": 6644,
@@ -161,11 +161,32 @@
       "at": "2026-08-22T08:03:55.720871+00:00"
     },
     {
-      "path": "tests/test_meta_over_patch.py",
-      "old_limit": 1055,
-      "new_limit": 6153,
-      "reason": "Задача (run 20260824-083721-run-mvp-py-self-test-0-core-fail, коммит f12ac0f): test_load_and_analyze брал MetaOverPatchEngine(workspace_root=Path('.')) — реальный репозиторий — и требовал >=1 записи в Core/failures.jsonl, который в .gitignore как runtime-состояние и отсутствует на свежем клоне; run_mvp.py --self-test отдавал EXIT=10 на любом чистом чекауте. Рост 1055->6153 B — тест переведён на собственную tempfile-фикстуру (setUp/tearDown), добавлен TestMetaOverPatchWithoutRegistry на фактическое состояние свежего клона (реестр отсутствует), проверки усилены с порога >=1 до точных значений. Правильность доказана тремя мутациями Core/MetaOverPatch.py (наблюдались красными, откачены, в коммит не входят), см. .ai-loop/runs/20260824-083721-run-mvp-py-self-test-0-core-fail/verification.md. Прежний лимит фиксировал размер теста, державшегося на диске автора, а не бюджет покрытия модуля.",
-      "at": "2026-08-24T08:55:17.000322+00:00"
+      "path": "README.md",
+      "old_limit": 5712,
+      "new_limit": 7076,
+      "reason": "2026-08-24, спринт выравнивания правды: исправлены 3 устаревших утверждения (13/15 принципов BIBLE, telegram_connector.py уже делает реальный сетевой I/O, Angle Diversity описан как реальный кросс-модельный кворум вместо детерминированных Python-эвристик Class 1/2/3). Рост 6285->7076 B — честные оговорки длиннее убранных неверных строк.",
+      "at": "2026-08-24T10:26:06.785406+00:00"
+    },
+    {
+      "path": "todo.md",
+      "old_limit": 6373,
+      "new_limit": 11604,
+      "reason": "2026-08-24: TASK-SUP-10 отмечена [x] как полный автономный цикл эволюции, хотя из 9 звеньев конвейера работает 1 (синтез и слияние — литералы/заглушки). Заменено честным разбором с привязкой к final_vision/06-self-evo-audit.md. Файл уже был за потолком (10941/6373) до этой правки — долг унаследован, не создан ею.",
+      "at": "2026-08-24T10:26:07.201599+00:00"
+    },
+    {
+      "path": "roadmap.md",
+      "old_limit": 5626,
+      "new_limit": 12643,
+      "reason": "2026-08-24: файл не обновлялся с 2026-08-21, до цикла Telegram-интеграции и до аудита самоэволюции; Phase 1-3 'Завершено 100%' прямо противоречило final_vision/06-self-evo-audit.md (8 из 9 звеньев отсутствуют). Добавлена вводная поправка + точечная оговорка у 3.2 (EvolutionDaemon). Файл уже был за потолком (10931/5626) до этой правки.",
+      "at": "2026-08-24T10:26:07.619410+00:00"
+    },
+    {
+      "path": "docs/final_vision/03-roadmap.md",
+      "old_limit": 10053,
+      "new_limit": 19628,
+      "reason": "2026-08-24: пункт 5.1.2 (Swarm Task-Tree) снят с чек-листа как невыполненный, хотя server.py:130-177 уже читает реальные WorktreeSandboxManager.list_sandboxes() с коммитов cecf5c5/7d59353/21f2d3a. Отмечен выполненным с точным остатком. Файл уже был за потолком (21250/10053) до этой правки.",
+      "at": "2026-08-24T10:26:08.020026+00:00"
     }
   ]
 }

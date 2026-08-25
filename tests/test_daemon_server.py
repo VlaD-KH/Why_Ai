@@ -191,6 +191,50 @@ class TestDaemonServer(unittest.TestCase):
         self.assertEqual(data["status"], "DB_SYNCED")
         conn.close()
 
+    def test_api_sync_db_reads_the_real_failures_file(self):
+        """/api/sync_db обязан читать Core/failures.jsonl, а не корень репозитория.
+
+        Регрессия: Core/server.py собирал путь как ROOT_DIR / "failures.jsonl"
+        (корень), а фактический файл лежит в Core/failures.jsonl — этот же путь
+        использует Core/MetaOverPatch.py. При расхождении sync_db всегда видел
+        0 записей, даже если сбои реально зафиксированы.
+        """
+        root = Path(__file__).resolve().parent.parent
+        real_path = root / "Core" / "failures.jsonl"
+        wrong_path = root / "failures.jsonl"
+
+        real_backup = real_path.read_text(encoding="utf-8") if real_path.exists() else None
+        wrong_existed = wrong_path.exists()
+
+        def restore():
+            if real_backup is None:
+                real_path.unlink(missing_ok=True)
+            else:
+                real_path.write_text(real_backup, encoding="utf-8")
+            if not wrong_existed:
+                wrong_path.unlink(missing_ok=True)
+
+        self.addCleanup(restore)
+
+        # Гарантированно разные счётчики в правильном и неправильном месте,
+        # чтобы тест не мог случайно пройти при перепутанном пути.
+        real_path.write_text(
+            '{"run_id": "sync-check-1"}\n{"run_id": "sync-check-2"}\n{"run_id": "sync-check-3"}\n',
+            encoding="utf-8",
+        )
+        wrong_path.write_text('{"run_id": "should-not-be-read"}\n', encoding="utf-8")
+
+        conn = http.client.HTTPConnection("127.0.0.1", TEST_PORT, timeout=3)
+        conn.request("POST", "/api/sync_db")
+        resp = conn.getresponse()
+        self.assertEqual(resp.status, 200)
+        data = json.loads(resp.read().decode("utf-8"))
+        conn.close()
+
+        failures_result = data.get("failures", {})
+        self.assertEqual(failures_result.get("synced_records"), 3)
+        self.assertIn("Core", str(failures_result.get("source_file", "")))
+
     def test_api_dvpn_endpoints(self):
         """Проверка REST эндпоинтов dVPN /api/dvpn/*."""
         # 1. GET /api/dvpn/status

@@ -10,7 +10,7 @@
     "Core/ContextFit.py": 8390,
     "Core/MetaOverPatch.py": 6098,
     "Core/PolicyDriftVector.py": 6974,
-    "Core/server.py": 8954,
+    "Core/server.py": 25780,
     "Core/SummaryChunker.py": 4413,
     "docs/cli-setup-RU.md": 11464,
     "docs/hierarchy-v3-RU.md": 13505,
@@ -37,7 +37,7 @@
     "tests/test_classify_diff.py": 2067,
     "tests/test_commit_gate.py": 1918,
     "tests/test_context_fit.py": 1237,
-    "tests/test_daemon_server.py": 16342,
+    "tests/test_daemon_server.py": 23267,
     "tests/test_evolution_daemon.py": 857,
     "tests/test_launcher.py": 956,
     "tests/test_mcp_server.py": 1741,
@@ -194,6 +194,20 @@
       "new_limit": 16342,
       "reason": "2026-08-24, Батч 0.2 (run 20260824-171122-0-api-0-1-dashboard-html-0-2-doc, коммит d510afc): добавлены test_api_status_no_hardcoded_test_count (@expectedFailure, красный до Батча 0.3) и test_unittest_writes_summary_to_stderr_not_stdout (изолированный, найден при живой проверке /api/tests в браузере — сервер пишет 'Ran N tests' в stderr, не в stdout, и /api/tests рекурсивно самозапускается при живом HTTP-обращении из файла внутри tests/, задокументировано комментарием). Файл уже был за потолком (11329/1736) до этой правки — унаследованный долг из 21 нарушения, обнаруженного при аудите репозитория 2026-08-24, эта правка его не создала.",
       "at": "2026-08-24T17:40:53.885625+00:00"
+    },
+    {
+      "path": "Core/server.py",
+      "old_limit": 8954,
+      "new_limit": 25780,
+      "reason": "2026-08-25, R-2 (коммит eebb64a): count_declared_tests() и count_bible_principles() заменили литералы 32/32 и 13/13 фактическим подсчётом; _panic_authorized() добавил fail-closed авторизацию POST /api/panic (hmac.compare_digest, ENV WHY_AI_PANIC_TOKEN) — маршрут не имел аутентификации вообще при Access-Control-Allow-Origin: *. Рост 21100->25780 Б: три новых функции с обоснованием в докстрингах. Файл был за потолком (8954) задолго до этой правки — унаследованный долг.",
+      "at": "2026-08-25T15:56:42.771307+00:00"
+    },
+    {
+      "path": "tests/test_daemon_server.py",
+      "old_limit": 16342,
+      "new_limit": 23267,
+      "reason": "2026-08-25, R-2 (коммит eebb64a): добавлен класс TestPanicAuthorization (4 теста: без токена, неверный токен, fail-closed при незаданном ENV, авторизованный путь против подменённого лаунчера) и test_api_status_counts_match_the_repository; снят @expectedFailure. Рост 16342->23267 Б.",
+      "at": "2026-08-25T15:56:43.185702+00:00"
     }
   ]
 }

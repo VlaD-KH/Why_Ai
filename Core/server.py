@@ -414,7 +414,7 @@ class ControlApiHandler(http.server.BaseHTTPRequestHandler):
             try:
                 from Tool.connectors.postgres_connector import PostgresConnector
                 pg = PostgresConnector()
-                f_res = pg.sync_failures_to_db(str(ROOT_DIR / "failures.jsonl"))
+                f_res = pg.sync_failures_to_db(str(ROOT_DIR / "Core" / "failures.jsonl"))
                 l_res = pg.sync_ledger_to_db(str(ROOT_DIR / "ledger.jsonl"))
                 broadcast_event("db_synced", {"failures": f_res, "ledger": l_res})
                 self._send_json(200, {"status": "DB_SYNCED", "failures": f_res, "ledger": l_res})

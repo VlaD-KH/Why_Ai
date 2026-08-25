@@ -39,7 +39,13 @@ class MultiModelQuorumReviewer:
         violations = []
         for f in changed_files:
             clean_f = f.replace("\\", "/").strip()
-            if clean_f.startswith("Supervisor/") or "BIBLE.md" in clean_f or "CODEOWNERS" in clean_f:
+            # Сравнение регистронезависимо: NTFS (и APFS по умолчанию) считают
+            # supervisor/launcher.py и Supervisor/launcher.py ОДНИМ файлом, а
+            # Python-строки — разными. Без casefold дифф с путём в нижнем
+            # регистре менял бы ровно тот же защищённый файл, минуя вето.
+            probe = clean_f.casefold()
+            if (probe.startswith("supervisor/") or "bible.md" in probe
+                    or "codeowners" in probe):
                 violations.append(f"Попытка прямой модификации защищенного контура Zone P/R: {clean_f}")
 
         # Проверка паттернов ослабления защиты

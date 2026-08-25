@@ -107,10 +107,85 @@ class ReviewedCommitGate:
             "can_merge": can_merge,
         }
 
-    def verify_and_merge(self, diff_content: str, preflight_hash: str, commit_message: str,
-                         branch_name: Optional[str] = None) -> Dict[str, Any]:
+    def _git(self, args: List[str], cwd: Optional[Path] = None,
+             stdin_text: Optional[str] = None) -> subprocess.CompletedProcess:
+        """Единая обёртка git с явной кодировкой.
+
+        encoding/errors обязательны: на Windows консоль по умолчанию cp1250,
+        и git-вывод с кириллицей роняет процесс UnicodeDecodeError. Тот же
+        приём уже применён в WorktreeSandbox._run_git. check=True не
+        используем — разбираем returncode явно, как везде в Supervisor/.
         """
-        Этап 2: Проверка Re-fingerprint и применение 3-Way Merge под контролем Supervisor.
+        return subprocess.run(
+            ["git", "-C", str(cwd or self.workspace_root), *args],
+            input=stdin_text,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+
+    def run_sandbox_tests(self, sandbox: Path, timeout_s: int = 600) -> Dict[str, Any]:
+        """Прогон tests/ внутри песочницы. Структурный результат, не булев флаг.
+
+        Итоговую строку "Ran N tests" unittest пишет в stderr, не в stdout —
+        ищем в объединении потоков (тот же дефект уже был пойман вживую в
+        дашборде, Волна 0).
+
+        Каталог тестов передаётся АБСОЛЮТНЫМ путём, и его существование
+        проверяется заранее. Причина не теоретическая: при `-s tests` и
+        отсутствующем ./tests unittest трактует "tests" как имя МОДУЛЯ и
+        находит установленный сторонний пакет `tests` в site-packages —
+        наблюдалось вживую на фикстуре без tests/, прогон подхватил 2108
+        чужих тестов и упал. То есть «красные тесты песочницы» могли бы
+        означать «в окружении стоит пакет с таким именем», а не «кандидат
+        сломал сборку».
+        """
+        tests_dir = Path(sandbox) / "tests"
+        if not tests_dir.is_dir():
+            return {"passed": False, "status": "TESTS_DIR_MISSING", "summary": "0 tests",
+                    "output_tail": f"В песочнице нет каталога tests/: {tests_dir}"}
+        try:
+            res = subprocess.run(
+                [sys.executable, "-m", "unittest", "discover",
+                 "-s", str(tests_dir), "-t", str(sandbox), "-p", "test_*.py"],
+                cwd=str(sandbox), capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=timeout_s,
+            )
+        except subprocess.TimeoutExpired:
+            return {"passed": False, "status": "TEST_TIMEOUT", "summary": "timeout",
+                    "output_tail": f"Прогон не уложился в {timeout_s} с."}
+
+        combined = (res.stdout or "") + (res.stderr or "")
+        match = re.search(r"Ran (\d+) tests?", combined)
+        summary = f"{match.group(1)} tests" if match else "unknown"
+        if res.returncode != 0:
+            return {"passed": False, "status": "TEST_FAILURE", "summary": summary,
+                    "output_tail": "\n".join(combined.splitlines()[-40:])}
+        return {"passed": True, "status": "TESTS_PASSED", "summary": summary,
+                "output_tail": "\n".join(combined.splitlines()[-10:])}
+
+    def verify_and_merge(self, diff_content: str, preflight_hash: str, commit_message: str,
+                         sandbox_path: Optional[str] = None,
+                         publish_branch: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Этап 2: Re-fingerprint, реальное применение диффа в песочнице, прогон
+        тестов и публикация проверенного кандидата в отдельную ветку.
+
+        Раньше этот метод возвращал литерал {"status": "MERGED_SUCCESSFULLY"}
+        без единого git-вызова: `import subprocess` в модуле был, но не
+        использовался ни разу. «Слияние» отчитывалось об успехе, не сделав
+        ничего — ровно то, от чего предостерегает CLAUDE.md, правило 2.
+
+        Почему публикация в ВЕТКУ, а не мерж в main:
+        `.ai-loop/policy/risk_classification.yaml` объявляет
+        `separation.merge_authority: human`, а BIBLE.md — Принцип 13
+        («Исключительное право человека на слияние»). Автономный мерж в main
+        нарушил бы обе нормы. Поэтому конвейер доводит кандидата до реального,
+        проверенного коммита на ветке self-evo/<cycle_id> и останавливается:
+        решение о слиянии остаётся человеку, через тот же PR-процесс, которым
+        проходит любое изменение зоны R.
+
+        Возвращаемый commit_sha настоящий: разрешается `git cat-file -e` из
+        workspace_root даже после удаления песочницы, потому что publish_branch
+        держит объект достижимым.
         """
         re_fingerprint = self.calculate_fingerprint(diff_content)
 
@@ -124,18 +199,80 @@ class ReviewedCommitGate:
                 "error": "Криптографический отпечаток диффа изменился после кворума! Слияние заблокировано.",
             }
 
-        # Применение слияния через Supervisor
-        logger.info(f"Отпечатки совпадают ({re_fingerprint}). Применение 3-Way слияния...")
+        if not sandbox_path or not publish_branch:
+            # Fail-closed: применять дифф вне песочницы некуда. Раньше в этом
+            # месте безусловно возвращался успех.
+            return {
+                "status": "NO_SANDBOX_PROVIDED", "merged": False,
+                "fingerprint_verified": re_fingerprint,
+                "error": "verify_and_merge требует sandbox_path и publish_branch.",
+            }
 
-        merge_payload = {
-            "status": "MERGED_SUCCESSFULLY",
+        sandbox = Path(sandbox_path)
+        logger.info(f"Отпечатки совпадают ({re_fingerprint}). Применение диффа в песочнице {sandbox}...")
+
+        # 1. Применить дифф в песочнице (--check первым, чтобы не оставить
+        #    частично применённый патч).
+        check = self._git(["apply", "--check", "-"], cwd=sandbox, stdin_text=diff_content)
+        if check.returncode != 0:
+            return {"status": "PATCH_APPLY_FAILED", "merged": False,
+                    "fingerprint_verified": re_fingerprint,
+                    "git_error": (check.stderr or "").strip()}
+        applied = self._git(["apply", "-"], cwd=sandbox, stdin_text=diff_content)
+        if applied.returncode != 0:
+            return {"status": "PATCH_APPLY_FAILED", "merged": False,
+                    "fingerprint_verified": re_fingerprint,
+                    "git_error": (applied.stderr or "").strip()}
+
+        # 2. Зафиксировать кандидата реальным коммитом.
+        self._git(["add", "-A"], cwd=sandbox)
+        committed = self._git(["commit", "-m", commit_message], cwd=sandbox)
+        if committed.returncode != 0:
+            return {"status": "SANDBOX_COMMIT_FAILED", "merged": False,
+                    "fingerprint_verified": re_fingerprint,
+                    "git_error": (committed.stderr or committed.stdout or "").strip()}
+        sandbox_sha = self._git(["rev-parse", "HEAD"], cwd=sandbox).stdout.strip()
+
+        # 3. Прогнать тесты ВНУТРИ песочницы против этого коммита. Раньше между
+        #    созданием и удалением песочницы не выполнялось ничего.
+        test_res = self.run_sandbox_tests(sandbox)
+        if not test_res["passed"]:
+            return {"status": test_res["status"], "merged": False,
+                    "fingerprint_verified": re_fingerprint,
+                    "sandbox_commit": sandbox_sha,
+                    "test_output_tail": test_res["output_tail"]}
+
+        # 4. Опубликовать проверенный коммит в отдельную ветку. Worktree делит
+        #    хранилище объектов с workspace_root — это запись ref, не push.
+        exists = self._git(["rev-parse", "--verify", "--quiet", publish_branch])
+        if exists.returncode == 0:
+            # Не перезаписываем: у человека эта ветка может быть уже в PR.
+            return {"status": "SELF_EVO_BRANCH_COLLISION", "merged": False,
+                    "fingerprint_verified": re_fingerprint,
+                    "sandbox_commit": sandbox_sha, "publish_branch": publish_branch}
+        published = self._git(["branch", publish_branch, sandbox_sha])
+        if published.returncode != 0:
+            return {"status": "BRANCH_PUBLISH_FAILED", "merged": False,
+                    "fingerprint_verified": re_fingerprint,
+                    "sandbox_commit": sandbox_sha,
+                    "git_error": (published.stderr or "").strip()}
+
+        logger.info(f"Кандидат верифицирован и опубликован: {publish_branch} -> {sandbox_sha}")
+        return {
+            "status": "CANDIDATE_VERIFIED_AND_PUBLISHED",
+            "merged": True,
             "fingerprint_verified": re_fingerprint,
             "commit_message": commit_message,
+            "commit_sha": sandbox_sha,
+            "publish_branch": publish_branch,
+            "tests_ran": test_res["summary"],
             "merged_by": "Supervisor Sovereign Core",
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "human_action_required": (
+                f"git push origin {publish_branch} и открыть PR в main — слияние "
+                "остаётся за человеком (BIBLE Принцип 13, merge_authority: human)"
+            ),
         }
-
-        return merge_payload
 
 
 def main() -> int:
@@ -143,6 +280,8 @@ def main() -> int:
     parser.add_argument("--diff-file", type=str, help="Файл с диффом для префлайта")
     parser.add_argument("--preflight-hash", type=str, help="Ранее полученный preflight хэш")
     parser.add_argument("--commit-msg", default="Auto-merged self_evo patch", help="Сообщение коммита")
+    parser.add_argument("--sandbox-path", type=str, help="Абсолютный путь песочницы (worktree), где применяется дифф")
+    parser.add_argument("--publish-branch", type=str, help="Ветка для публикации проверенного кандидата (self-evo/<id>)")
 
     args = parser.parse_args()
     gate = ReviewedCommitGate()
@@ -150,8 +289,12 @@ def main() -> int:
     if args.diff_file:
         content = Path(args.diff_file).read_text(encoding="utf-8")
         if args.preflight_hash:
-            # Этап 2: Re-fingerprint & Merge
-            res = gate.verify_and_merge(content, args.preflight_hash, args.commit_msg)
+            # Этап 2: Re-fingerprint, применение в песочнице, тесты, публикация.
+            # CLI ведёт ровно тот же путь, что и EvolutionDaemon — иначе через
+            # него можно было бы «слить» непроверенный дифф в обход тестов.
+            res = gate.verify_and_merge(content, args.preflight_hash, args.commit_msg,
+                                        sandbox_path=args.sandbox_path,
+                                        publish_branch=args.publish_branch)
             print(json.dumps(res, indent=2, ensure_ascii=False))
             return 0 if res.get("merged") is not False else 10
         else:

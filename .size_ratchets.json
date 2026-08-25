@@ -24,26 +24,26 @@
     "Eye/Dashboard.tsx": 29988,
     "Eye/TelemetryDock.tsx": 10597,
     "Supervisor/classify_diff.py": 18995,
-    "Supervisor/CommitGate.py": 8313,
-    "Supervisor/EvolutionDaemon.py": 16454,
+    "Supervisor/CommitGate.py": 18457,
+    "Supervisor/EvolutionDaemon.py": 25572,
     "Supervisor/guard-policy-plane.sh": 2245,
     "Supervisor/launcher.py": 10173,
     "Supervisor/miniyaml.py": 8376,
-    "Supervisor/QuorumReviewer.py": 8847,
+    "Supervisor/QuorumReviewer.py": 10898,
     "Supervisor/SizeRatchets.py": 11817,
     "Supervisor/WorkspaceOrchestrator.py": 9559,
     "Supervisor/WorktreeSandbox.py": 7152,
     "Supervisor/Constitution/BIBLE.md": 7888,
     "tests/test_classify_diff.py": 2067,
-    "tests/test_commit_gate.py": 1918,
+    "tests/test_commit_gate.py": 17054,
     "tests/test_context_fit.py": 1237,
     "tests/test_daemon_server.py": 16342,
-    "tests/test_evolution_daemon.py": 857,
+    "tests/test_evolution_daemon.py": 11544,
     "tests/test_launcher.py": 956,
     "tests/test_mcp_server.py": 1741,
     "tests/test_meta_over_patch.py": 6153,
     "tests/test_policy_drift_vector.py": 1408,
-    "tests/test_quorum_reviewer.py": 1881,
+    "tests/test_quorum_reviewer.py": 3329,
     "tests/test_size_ratchets.py": 897,
     "tests/test_summary_chunker.py": 928,
     "tests/test_workspace_orchestrator.py": 1600,
@@ -201,6 +201,48 @@
       "new_limit": 21100,
       "reason": "2026-08-25, R-1 (мерж agent/sonnet5/telegram-bridge в main через Волну 1): TASK-TG-12 меняет путь sync_failures_to_db с ROOT_DIR/failures.jsonl на ROOT_DIR/Core/failures.jsonl (одна строка, коммит e1fd870 на ветке). Рост 21091->21100 Б тривиален. Файл уже был за потолком (21091/8954) до этой правки — унаследованный долг, эта правка его не создала.",
       "at": "2026-08-25T15:47:29.113830+00:00"
+    },
+    {
+      "path": "Supervisor/CommitGate.py",
+      "old_limit": 8313,
+      "new_limit": 18457,
+      "reason": "20260825-154544 R-4 (коммиты 72d4413/86397a1): замыкание конвейера самоэволюции реальными git-операциями — verify_and_merge выполняет реальные git apply/add/commit/branch и прогон tests/ в песочнице вместо возврата литерала MERGED_SUCCESSFULLY; добавлены _git() и run_sandbox_tests(). Рост 8313->18457 Б: реальный конвейер + обоснование политики (merge_authority: human) в докстрингах.",
+      "at": "2026-08-25T16:16:33.799351+00:00"
+    },
+    {
+      "path": "Supervisor/EvolutionDaemon.py",
+      "old_limit": 16454,
+      "new_limit": 25572,
+      "reason": "20260825-154544 R-4 (коммиты 72d4413/86397a1): замыкание конвейера самоэволюции реальными git-операциями — try/finally вокруг песочницы, 4 точки ledger, инвариант неподвижности HEAD, фикс синтаксически невалидного candidate_diff, честная строка лога. Рост 16454->25572 Б. Файл был ровно на потолке до правки.",
+      "at": "2026-08-25T16:16:34.188736+00:00"
+    },
+    {
+      "path": "Supervisor/QuorumReviewer.py",
+      "old_limit": 8847,
+      "new_limit": 10898,
+      "reason": "20260825-154544 R-4 (коммиты 72d4413/86397a1): замыкание конвейера самоэволюции реальными git-операциями (R-4b) — casefold() в вето Class 3: на NTFS supervisor/launcher.py обходил защиту Supervisor/. Рост 8847->10898 Б, файл был за потолком до правки (унаследованный долг).",
+      "at": "2026-08-25T16:16:34.551299+00:00"
+    },
+    {
+      "path": "tests/test_commit_gate.py",
+      "old_limit": 1918,
+      "new_limit": 17054,
+      "reason": "20260825-154544 R-4 (коммиты 72d4413/86397a1): замыкание конвейера самоэволюции реальными git-операциями — класс TestRealMergePipeline: 4 теста против настоящего git-репозитория (cat-file -e возвращённого SHA, git show содержимого, main не сдвинут, сломанный кандидат не публикуется, занятая ветка не перезаписывается). Рост 1918->17054 Б.",
+      "at": "2026-08-25T16:16:34.902022+00:00"
+    },
+    {
+      "path": "tests/test_evolution_daemon.py",
+      "old_limit": 857,
+      "new_limit": 11544,
+      "reason": "20260825-154544 R-4 (коммиты 72d4413/86397a1): замыкание конвейера самоэволюции реальными git-операциями — сквозные тесты: цикл производит реальный коммит и не двигает HEAD; цикл оставляет след в ledger. Фикстура получила настоящий проходящий tests/ с __init__.py. Рост 857->11544 Б.",
+      "at": "2026-08-25T16:16:35.271844+00:00"
+    },
+    {
+      "path": "tests/test_quorum_reviewer.py",
+      "old_limit": 1881,
+      "new_limit": 3329,
+      "reason": "20260825-154544 R-4 (коммиты 72d4413/86397a1): замыкание конвейера самоэволюции реальными git-операциями (R-4b) — регрессионный тест на регистронезависимость вето Zone P/R (4 формы записи пути). Рост 1881->3329 Б.",
+      "at": "2026-08-25T16:16:35.668545+00:00"
     }
   ]
 }

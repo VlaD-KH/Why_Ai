@@ -10,7 +10,7 @@
     "Core/ContextFit.py": 8390,
     "Core/MetaOverPatch.py": 6098,
     "Core/PolicyDriftVector.py": 6974,
-    "Core/server.py": 8954,
+    "Core/server.py": 21100,
     "Core/SummaryChunker.py": 4413,
     "docs/cli-setup-RU.md": 11464,
     "docs/hierarchy-v3-RU.md": 13505,
@@ -194,6 +194,13 @@
       "new_limit": 16342,
       "reason": "2026-08-24, Батч 0.2 (run 20260824-171122-0-api-0-1-dashboard-html-0-2-doc, коммит d510afc): добавлены test_api_status_no_hardcoded_test_count (@expectedFailure, красный до Батча 0.3) и test_unittest_writes_summary_to_stderr_not_stdout (изолированный, найден при живой проверке /api/tests в браузере — сервер пишет 'Ran N tests' в stderr, не в stdout, и /api/tests рекурсивно самозапускается при живом HTTP-обращении из файла внутри tests/, задокументировано комментарием). Файл уже был за потолком (11329/1736) до этой правки — унаследованный долг из 21 нарушения, обнаруженного при аудите репозитория 2026-08-24, эта правка его не создала.",
       "at": "2026-08-24T17:40:53.885625+00:00"
+    },
+    {
+      "path": "Core/server.py",
+      "old_limit": 8954,
+      "new_limit": 21100,
+      "reason": "2026-08-25, R-1 (мерж agent/sonnet5/telegram-bridge в main через Волну 1): TASK-TG-12 меняет путь sync_failures_to_db с ROOT_DIR/failures.jsonl на ROOT_DIR/Core/failures.jsonl (одна строка, коммит e1fd870 на ветке). Рост 21091->21100 Б тривиален. Файл уже был за потолком (21091/8954) до этой правки — унаследованный долг, эта правка его не создала.",
+      "at": "2026-08-25T15:47:29.113830+00:00"
     }
   ]
 }

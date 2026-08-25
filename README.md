@@ -22,7 +22,7 @@ Why_Ai/
 │   ├── EvolutionDaemon.py             # Фоновый демон рекурсивного саморазвития
 │   ├── guard-policy-plane.sh          # Скрипт защиты зон файловой системы
 │   └── Constitution/
-│       └── BIBLE.md                   # 13 Неизменяемых Конституционных Принципов
+│       └── BIBLE.md                   # 15 Неизменяемых Конституционных Принципов
 │
 ├── Core/                              # Zone R (см. .ai-loop/policy/protected_paths.yaml)
 │   ├── server.py                      # Daemon Control Plane API (127.0.0.1:8765, REST & SSE)
@@ -37,7 +37,9 @@ Why_Ai/
 ├── Tool/                              # Tool Layer (Инструменты и коннекторы)
 │   ├── mcp_server.py                  # FastMCP RPC Server (@mcp.tool, inputSchema по спецификации MCP)
 │   ├── mcp_config.json                # Манифест конфигурации MCP
-│   ├── connectors/                    # github, postgres, telegram, dvpn — без реального сетевого I/O
+│   ├── connectors/                    # github, postgres, telegram, dvpn — telegram отправляет
+│   │                                  #   реальный HTTPS через urllib.request; github/postgres/dvpn
+│   │                                  #   реального сетевого I/O не выполняют
 │   └── skills/                        # 9 инженерных манифестов (spec, plan, build, test, review, webperf, code-simplify, ship, using-agent-skills)
 │
 ├── Eye/                               # Eye Layer (Интерфейс, телеметрия и мониторинг)
@@ -85,6 +87,11 @@ python -m unittest discover -s tests -p "test_*.py" -v
 ## 3. Ключевые инварианты
 
 1. **Rule of Max Risk:** Вложенная политика проекта может только сужать права, но не расширять их.
-2. **Angle Diversity:** Право вето любой модели (Claude 3.7, GPT-4o, DeepSeek-R1) блокирует слияние.
+2. **Angle Diversity:** Право вето любой из трёх проекций (Security/Class 3, Functional/Class 2,
+   Bloat/Class 1) блокирует слияние. Сейчас это детерминированные Python-эвристики
+   (`Supervisor/QuorumReviewer.py`), не независимые вызовы разных моделей — что и требует
+   `.ai-loop/policy/risk_classification.yaml` (`evaluator_is_deterministic: true`), но
+   расходится с более ранними заявлениями про «Claude 3.7 / GPT-4o / DeepSeek-R1» в этом же
+   документе прежде. Разбор — `docs/final_vision/06-self-evo-audit.md`.
 3. **Shrink-Only:** Кодовая база защищена от раздувания храповиками `SizeRatchets.py`.
 4. **Out-of-Band /PANIC:** Экстренная остановка с кодом 10 выполняется в абсолютный обход LLM.

@@ -7,6 +7,7 @@ Verifies HTTP REST API status, Swarm Task-Tree, Living Identity, config, mode sw
 import http.client
 import http.server
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -15,6 +16,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from typing import List
 from Core.server import ControlApiHandler
 
 TEST_PORT = 18765
@@ -45,18 +47,15 @@ class TestDaemonServer(unittest.TestCase):
         self.assertIn("verified_tests", data)
         conn.close()
 
-    @unittest.expectedFailure
     def test_api_status_no_hardcoded_test_count(self):
         """verified_tests обязан быть фактическим подсчётом, не литералом.
 
-        @expectedFailure: Core/server.py:118 сейчас жёстко возвращает
-        "32/32 PASS" при 160 реальных тестах (Батч 0.3, Волна 0, зона R —
-        ждёт оператора, см. docs/session_archive/2026-08-23/
-        implementation_plan.md). Тест наблюдался красным против текущей
-        реализации до коммита — это и есть Proof of Falsification, не
-        просто предсказание. Как только Батч 0.3 закроет литерал, unittest
-        отрапортует "unexpected success" (сам по себе провал прогона) —
-        сигнал снять декоратор, а не тихо оставить тест недействующим.
+        Был @expectedFailure с Волны 0 (Батч 0.2): сервер жёстко возвращал
+        "32/32 PASS" при 160+ реальных тестах. Декоратор снят в R-2 вместе с
+        фиксом — ровно тот сценарий, ради которого он и ставился: как только
+        литерал уходит, unittest начинает рапортовать "unexpected success",
+        что само по себе провал прогона и заставляет снять декоратор, а не
+        оставить тест тихо недействующим.
         """
         conn = http.client.HTTPConnection("127.0.0.1", TEST_PORT, timeout=3)
         conn.request("GET", "/api/status")
@@ -64,6 +63,38 @@ class TestDaemonServer(unittest.TestCase):
         data = json.loads(resp.read().decode("utf-8"))
         conn.close()
         self.assertNotIn("32/32", data["verified_tests"])
+
+    def test_api_status_counts_match_the_repository(self):
+        """verified_tests и active_invariants обязаны совпадать с фактом на диске.
+
+        Проверяется не форма строки, а само число: тесты пересчитываются по
+        исходникам tests/, принципы — по заголовкам BIBLE.md. Если сервер
+        снова начнёт возвращать литерал, эти равенства разойдутся.
+        """
+        root = Path(__file__).resolve().parent.parent
+
+        expected_tests = 0
+        for path in sorted((root / "tests").glob("test_*.py")):
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                if line.lstrip().startswith("def test"):
+                    expected_tests += 1
+
+        bible = (root / "Supervisor" / "Constitution" / "BIBLE.md").read_text(
+            encoding="utf-8", errors="replace")
+        expected_principles = sum(
+            1 for line in bible.splitlines() if line.lstrip().startswith("### Принцип "))
+
+        conn = http.client.HTTPConnection("127.0.0.1", TEST_PORT, timeout=3)
+        conn.request("GET", "/api/status")
+        data = json.loads(conn.getresponse().read().decode("utf-8"))
+        conn.close()
+
+        self.assertEqual(data["verified_tests"], f"{expected_tests} tests declared")
+        self.assertEqual(data["active_invariants"], f"{expected_principles}/{expected_principles} BIBLE.md")
+        # Конституция ратифицировала 14-й и 15-й принципы 2026-08-21; сервер
+        # рапортовал 13/13 вплоть до R-2. Явная нижняя граница, чтобы
+        # регрессия к старому литералу не прошла молча.
+        self.assertGreaterEqual(expected_principles, 15)
 
     def test_api_swarm_tasks_endpoint(self):
         """Дерево роя обязано отражать реальные git worktree-песочницы, а не литерал.
@@ -297,6 +328,112 @@ class TestUnittestSummaryStream(unittest.TestCase):
             self.assertRegex(res.stderr, r"Ran 1 tests?")
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+# Отдельный порт и отдельный класс: эти тесты меняют переменную окружения
+# WHY_AI_PANIC_TOKEN и подменяют SupervisorLauncher, поэтому не должны
+# соседствовать с общим сервером TestDaemonServer.
+PANIC_TEST_PORT = 18767
+
+
+class _RecordingLauncher:
+    """Заглушка вместо SupervisorLauncher — регистрирует вызов, никого не убивает.
+
+    Настоящий panic_stop делает taskkill /F /T по всем зарегистрированным PID
+    (Supervisor/launcher.py:87-96). Если у оператора в этот момент запущены
+    реальные фоновые процессы, живой happy-path тест их убьёт. Поэтому
+    авторизованный путь проверяется против подменённого лаунчера: доказывается
+    ровно то, что нужно — что запрос с валидным токеном ДОХОДИТ до panic_stop, —
+    без реального убийства дерева процессов.
+    """
+
+    calls: List[str] = []
+
+    def __init__(self, workspace_root=None):
+        self.workspace_root = workspace_root
+
+    def panic_stop(self, reason: str = "") -> int:
+        _RecordingLauncher.calls.append(reason)
+        return 10
+
+
+class TestPanicAuthorization(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", PANIC_TEST_PORT), ControlApiHandler)
+        cls.server_thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
+        cls.server_thread.start()
+        time.sleep(0.3)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+
+    def setUp(self):
+        self._saved_env = os.environ.get("WHY_AI_PANIC_TOKEN")
+        _RecordingLauncher.calls = []
+
+    def tearDown(self):
+        if self._saved_env is None:
+            os.environ.pop("WHY_AI_PANIC_TOKEN", None)
+        else:
+            os.environ["WHY_AI_PANIC_TOKEN"] = self._saved_env
+
+    def _post_panic(self, token=None):
+        conn = http.client.HTTPConnection("127.0.0.1", PANIC_TEST_PORT, timeout=5)
+        headers = {"X-Why-Ai-Panic-Token": token} if token is not None else {}
+        conn.request("POST", "/api/panic", body="", headers=headers)
+        resp = conn.getresponse()
+        status = resp.status
+        data = json.loads(resp.read().decode("utf-8"))
+        conn.close()
+        return status, data
+
+    def test_panic_without_token_is_rejected(self):
+        """Запрос без заголовка обязан получить 401, а не остановить систему."""
+        os.environ["WHY_AI_PANIC_TOKEN"] = "correct-horse-battery-staple"
+        status, data = self._post_panic()
+        self.assertEqual(status, 401)
+        self.assertEqual(data["status"], "UNAUTHORIZED")
+        self.assertEqual(_RecordingLauncher.calls, [])
+
+    def test_panic_with_wrong_token_is_rejected(self):
+        """Неверный токен — 401, panic_stop не вызывается."""
+        os.environ["WHY_AI_PANIC_TOKEN"] = "correct-horse-battery-staple"
+        status, data = self._post_panic(token="wrong-token")
+        self.assertEqual(status, 401)
+        self.assertEqual(data["status"], "UNAUTHORIZED")
+        self.assertEqual(_RecordingLauncher.calls, [])
+
+    def test_panic_fails_closed_when_env_is_unset(self):
+        """Незаданный ENV означает «войти нельзя», а не «проверка отключена».
+
+        Это главная проверка всего R-2: fail-open здесь вернул бы ровно ту
+        дыру, которую правка закрывает — любая страница в браузере оператора
+        могла убить дерево процессов при Access-Control-Allow-Origin: *.
+        """
+        os.environ.pop("WHY_AI_PANIC_TOKEN", None)
+        status, data = self._post_panic(token="any-token-at-all")
+        self.assertEqual(status, 401)
+        self.assertEqual(data["status"], "UNAUTHORIZED")
+        self.assertEqual(_RecordingLauncher.calls, [])
+
+    def test_panic_with_correct_token_reaches_panic_stop(self):
+        """Валидный токен доходит до panic_stop — против подменённого лаунчера."""
+        os.environ["WHY_AI_PANIC_TOKEN"] = "correct-horse-battery-staple"
+        import Core.server as server_module
+        original = server_module.SupervisorLauncher
+        server_module.SupervisorLauncher = _RecordingLauncher
+        try:
+            status, data = self._post_panic(token="correct-horse-battery-staple")
+        finally:
+            server_module.SupervisorLauncher = original
+        self.assertEqual(status, 200)
+        self.assertEqual(data["status"], "PANIC_STOPPED")
+        self.assertEqual(data["exit_code"], 10)
+        self.assertEqual(len(_RecordingLauncher.calls), 1)
 
 
 if __name__ == "__main__":

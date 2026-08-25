@@ -8,6 +8,7 @@ Core/server.py instance for wire-format compatibility.
 
 import http.server
 import json
+import os
 import tempfile
 import threading
 import time
@@ -385,10 +386,56 @@ class TestDispatchActionAgainstRealServer(unittest.TestCase):
         reply = dispatch_action({"action": "GET_STATUS"}, backend_base_url=f"http://127.0.0.1:{self.port}")
         self.assertIn("RUNNING", reply)
 
+    def setUp(self):
+        self._saved_token = os.environ.get("WHY_AI_PANIC_TOKEN")
+
+    def tearDown(self):
+        if self._saved_token is None:
+            os.environ.pop("WHY_AI_PANIC_TOKEN", None)
+        else:
+            os.environ["WHY_AI_PANIC_TOKEN"] = self._saved_token
+
     def test_trigger_panic_uses_the_default_opener_correctly(self):
-        reply = dispatch_action({"action": "TRIGGER_PANIC"}, backend_base_url=f"http://127.0.0.1:{self.port}")
+        """С валидным токеном мост обязан довести /panic до подтверждения.
+
+        Токен появился в R-2 (авторизация POST /api/panic). Без него этот
+        тест краснел с «останов НЕ подтверждён» — и это была не придирка
+        теста, а реальная поломка: мост Telegram переставал уметь
+        останавливать систему.
+        """
+        os.environ["WHY_AI_PANIC_TOKEN"] = "bridge-test-token"
+        # Лаунчер подменяется: настоящий panic_stop убил бы дерево процессов
+        # оператора, если у него зарегистрированы фоновые PID.
+        import Core.server as server_module
+        original = server_module.SupervisorLauncher
+
+        class _NoopLauncher:
+            def __init__(self, workspace_root=None):
+                pass
+
+            def panic_stop(self, reason: str = "") -> int:
+                return 10
+
+        server_module.SupervisorLauncher = _NoopLauncher
+        try:
+            reply = dispatch_action({"action": "TRIGGER_PANIC"},
+                                    backend_base_url=f"http://127.0.0.1:{self.port}")
+        finally:
+            server_module.SupervisorLauncher = original
+
         self.assertIn("подтверждён", reply)
         self.assertNotIn("НЕ подтверждён", reply)
+
+    def test_trigger_panic_without_token_reports_refusal_not_success(self):
+        """Без токена бэкенд отвечает 401 — оператор обязан узнать об ОТКАЗЕ.
+
+        Дефект R-01 в исходной форме — сообщить «система остановлена» при
+        неуспешном ответе. Мост обязан сказать ровно обратное.
+        """
+        os.environ.pop("WHY_AI_PANIC_TOKEN", None)
+        reply = dispatch_action({"action": "TRIGGER_PANIC"},
+                                backend_base_url=f"http://127.0.0.1:{self.port}")
+        self.assertIn("НЕ подтверждён", reply)
 
 
 if __name__ == "__main__":

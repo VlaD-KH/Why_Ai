@@ -8,6 +8,7 @@
 
 import argparse
 import datetime
+import hmac
 import http.server
 import json
 import logging
@@ -68,6 +69,53 @@ def broadcast_event(event_type: str, data: Dict[str, Any]) -> None:
                 EVENT_SUBSCRIBERS.remove(q)
 
 
+# ENV-имя общего секрета для внеполосного /panic. Значение никогда не логируется
+# и не попадает в ответ — наружу уходит только факт совпадения/несовпадения.
+PANIC_TOKEN_ENV = "WHY_AI_PANIC_TOKEN"
+
+
+def count_declared_tests() -> str:
+    """Фактическое число тестовых методов в tests/, посчитанное по исходникам.
+
+    Раньше здесь стоял литерал "32/32 PASS" при 160+ реальных тестах — то есть
+    статус-панель уверенно называла неверное число (CLAUDE.md, правило 2).
+    Считаем объявления `def test_*` вместо прогона набора: /api/status обязан
+    отвечать мгновенно, а полный прогон занимает ~13 секунд. Это честно
+    описывает, что именно измерено — «объявлено», а не «прошло»: за фактический
+    результат отвечает отдельный маршрут /api/tests, который реально запускает
+    unittest.
+    """
+    tests_dir = ROOT_DIR / "tests"
+    if not tests_dir.is_dir():
+        return "0 tests discovered"
+    total = 0
+    for path in sorted(tests_dir.glob("test_*.py")):
+        try:
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                if line.lstrip().startswith("def test"):
+                    total += 1
+        except OSError:
+            continue
+    return f"{total} tests declared"
+
+
+def count_bible_principles() -> str:
+    """Фактическое число принципов в BIBLE.md, посчитанное по заголовкам.
+
+    Раньше — литерал "13/13 BIBLE.md", хотя принципов 15 (14 и 15 ратифицированы
+    2026-08-21). EvolutionDaemon уже рапортует 15/15, сервер отставал.
+    """
+    bible = ROOT_DIR / "Supervisor" / "Constitution" / "BIBLE.md"
+    if not bible.is_file():
+        return "BIBLE.md missing"
+    try:
+        text = bible.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return "BIBLE.md unreadable"
+    count = sum(1 for line in text.splitlines() if line.lstrip().startswith("### Принцип "))
+    return f"{count}/{count} BIBLE.md"
+
+
 class ControlApiHandler(http.server.BaseHTTPRequestHandler):
     """
     HTTP & SSE Обработчик для Daemon Control Plane.
@@ -79,7 +127,7 @@ class ControlApiHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Why-Ai-Panic-Token")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -88,7 +136,7 @@ class ControlApiHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Why-Ai-Panic-Token")
         self.end_headers()
 
     def do_GET(self) -> None:
@@ -117,8 +165,8 @@ class ControlApiHandler(http.server.BaseHTTPRequestHandler):
                 "port": 8765,
                 "workspace_root": str(ROOT_DIR),
                 "supervisor": launcher.get_status(),
-                "verified_tests": "32/32 PASS",
-                "active_invariants": "13/13 BIBLE.md",
+                "verified_tests": count_declared_tests(),
+                "active_invariants": count_bible_principles(),
                 "model_capability_grading": "Class 1/2/3 Active",
                 "time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             }
@@ -269,9 +317,40 @@ class ControlApiHandler(http.server.BaseHTTPRequestHandler):
 
         self._send_json(404, {"error": "Not Found", "path": self.path})
 
+    def _panic_authorized(self) -> bool:
+        """Fail-closed проверка общего секрета для /panic.
+
+        До этой правки маршрут не имел аутентификации вообще при
+        `Access-Control-Allow-Origin: *` — то есть любая открытая в браузере
+        оператора страница могла отправить POST и убить всё дерево процессов
+        (launcher.panic_stop → taskkill /F /T). Секрет читается из ENV
+        (Принцип 14 — ноль учётных данных в репозитории) и сравнивается
+        constant-time.
+
+        Fail-closed означает буквально: если секрет не задан в окружении,
+        маршрут закрыт, а не открыт. Незаданный ENV — это не «проверка
+        отключена», это «войти нельзя».
+        """
+        expected = (os.getenv(PANIC_TOKEN_ENV) or "").strip()
+        if not expected:
+            return False
+        provided = (self.headers.get("X-Why-Ai-Panic-Token") or "").strip()
+        if not provided:
+            return False
+        return hmac.compare_digest(provided, expected)
+
     def do_POST(self) -> None:
-        # 1. Экстренный останов /panic
+        # 1. Экстренный останов /panic — только с валидным общим секретом.
         if self.path == "/api/panic":
+            if not self._panic_authorized():
+                # Причина отказа намеренно не детализируется (не задан ENV
+                # против неверного токена) — это подсказка атакующему.
+                logger.warning("[PANIC] Отклонён неавторизованный запрос на внеполосный останов.")
+                self._send_json(401, {
+                    "status": "UNAUTHORIZED",
+                    "error": f"POST /api/panic требует заголовок X-Why-Ai-Panic-Token, совпадающий с ${PANIC_TOKEN_ENV}",
+                })
+                return
             launcher = SupervisorLauncher(workspace_root=ROOT_DIR)
             code = launcher.panic_stop(reason="Remote /panic triggered via Control Plane API")
             broadcast_event("panic_stop", {"reason": "Remote API trigger", "exit_code": code})

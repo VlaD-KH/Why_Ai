@@ -11,6 +11,7 @@ import datetime
 import json
 import logging
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -41,6 +42,36 @@ except ImportError:
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] [EVO-DAEMON] %(message)s")
 logger = logging.getLogger("EvolutionDaemon")
+
+
+def _ledger_append(workspace_root: Path, record: Dict[str, Any]) -> None:
+    """Запись в append-only журнал прогонов на границах фаз цикла.
+
+    До R-4 демон не обращался к ledger вообще (`grep -n ledger` — ноль
+    совпадений), то есть автономные циклы не оставляли аудиторского следа:
+    единственным свидетельством был лог в stdout, который никто не хранит.
+
+    `.ai-loop/bin/` — зона P, и агент её не правит. Но вызывать её
+    задокументированный API из зоны R — это использование библиотеки, а не
+    правка политики; ровно так же этот модуль уже импортирует Core/ и
+    Supervisor/. `ledger.append()` сам проставляет schema/seq/ts/prev/hash,
+    обязателен только run_id.
+
+    Отказ журналирования не должен ронять эволюционный цикл — но и молча
+    исчезать он тоже не должен, поэтому пишем предупреждение.
+    """
+    try:
+        # КОД журнала берём из репозитория, где лежит этот модуль, а ДАННЫЕ
+        # пишем в workspace_root. В проде это один и тот же каталог, но в
+        # тестовой фикстуре workspace_root — временный каталог без .ai-loop/,
+        # и вывод пути импорта из него давал "No module named 'ledger'".
+        bin_dir = str(Path(__file__).resolve().parent.parent / ".ai-loop" / "bin")
+        if bin_dir not in sys.path:
+            sys.path.insert(0, bin_dir)
+        import ledger  # type: ignore
+        ledger.append(str(workspace_root), record)
+    except Exception as exc:  # noqa: BLE001 — журнал не критичен для самого цикла
+        logger.warning(f"Не удалось записать в ledger ({record.get('event')}): {exc}")
 
 
 class IdempotencyGate:
@@ -175,12 +206,27 @@ class AutonomousEvolutionDaemon:
         # "tests/test_meta_over_patch.py"] — список, который не совпадал с
         # тем, что реально менял дифф, и это же скрывало вето Zone P/R в
         # CommitGate (см. extract_changed_files).
+        # ВАЖНО: это по-прежнему фиктивный кандидат-заглушка (две строки
+        # комментария), а не результат синтеза — настоящий предложитель это
+        # R-3 (Tool/connectors/llm_connector.py), он заменит весь этот блок.
+        # Но заголовки диффа теперь СИНТАКСИЧЕСКИ ВАЛИДНЫ: раньше не было ни
+        # `new file mode`, ни `@@`-заголовка ханка, и `git apply --check` на
+        # этот литерал отвечал "patch with only garbage". Пока verify_and_merge
+        # возвращал словарь без git-вызовов, это ничего не ломало; с реальным
+        # `git apply` (R-4) невалидный дифф означал бы, что цикл не может
+        # завершиться успешно НИ РАЗУ — не временное ограничение, а системная
+        # невозможность. Содержимое осталось прежним, исправлен только синтаксис.
+        _log_lines = [
+            f"# Evolution Cycle {cycle_id} verified at {datetime.datetime.now(datetime.timezone.utc).isoformat()}",
+            f"# Refactor objective: {refactor_plan.get('title', 'Self-Evo Optimization')}",
+        ]
         candidate_diff = (
-            f"diff --git a/Core/evolution_log.txt b/Core/evolution_log.txt\n"
-            f"--- a/Core/evolution_log.txt\n"
-            f"+++ b/Core/evolution_log.txt\n"
-            f"+# Evolution Cycle {cycle_id} verified at {datetime.datetime.now(datetime.timezone.utc).isoformat()}\n"
-            f"+# Refactor objective: {refactor_plan.get('title', 'Self-Evo Optimization')}\n"
+            "diff --git a/Core/evolution_log.txt b/Core/evolution_log.txt\n"
+            "new file mode 100644\n"
+            "--- /dev/null\n"
+            "+++ b/Core/evolution_log.txt\n"
+            f"@@ -0,0 +1,{len(_log_lines)} @@\n"
+            + "".join(f"+{line}\n" for line in _log_lines)
         )
         changed_files = extract_changed_files(candidate_diff)
 
@@ -191,32 +237,81 @@ class AutonomousEvolutionDaemon:
             logger.info(f"Idempotency Gate: {reason}")
             return {"cycle_id": cycle_id, "status": "IDEMPOTENT_SKIPPED", "reason": reason, "changed_files": changed_files}
 
-        # 4. Создание изолированной песочницы
-        sandbox = self.sandbox_manager.create_sandbox(task_id=cycle_id)
+        _ledger_append(self.workspace_root, {
+            "run_id": cycle_id, "event": "run_start", "phase": "BUILD",
+            "actor": "EvolutionDaemon",
+            "idea": refactor_plan.get("title", "Self-Evo Optimization"),
+            "paths": changed_files,
+            "note": f"autonomous self-evo cycle; failures_bound={refactor_plan.get('total_failures', 0)}",
+        })
 
-        # 5. Шлюз префлайта: Size Ratchets (гейт-режим, без записи) +
-        # мультимодельный кворум.
-        preflight = self.commit_gate.stage_preflight(candidate_diff)
-        if not preflight["can_merge"]:
-            logger.warning(f"Гейт отклонил кандидатный дифф цикла {cycle_id}: {preflight['status']}")
+        # Инвариант: main не должен сдвинуться ни при каком исходе цикла.
+        # Слияние идёт в отдельную ветку self-evo/<cycle_id> — merge_authority:
+        # human (risk_classification.yaml), BIBLE Принцип 13.
+        head_before = self._rev_parse_head()
+        publish_branch = f"self-evo/{cycle_id}"
+
+        # 4. Создание изолированной песочницы.
+        # try/finally обязателен: до R-4 verify_and_merge был чистым
+        # словарём и бросить не мог, теперь он делает реальный subprocess-I/O
+        # (git, прогон тестов). Без finally исключение оставило бы висящий
+        # worktree и ветку sandbox/<cycle_id>.
+        sandbox = self.sandbox_manager.create_sandbox(task_id=cycle_id)
+        try:
+            # 5. Шлюз префлайта: Size Ratchets (гейт-режим, без записи) +
+            # мультимодельный кворум.
+            preflight = self.commit_gate.stage_preflight(candidate_diff)
+            if not preflight["can_merge"]:
+                logger.warning(f"Гейт отклонил кандидатный дифф цикла {cycle_id}: {preflight['status']}")
+                _ledger_append(self.workspace_root, {
+                    "run_id": cycle_id, "event": "gate", "phase": "BUILD",
+                    "actor": "EvolutionDaemon", "decision": "rejected",
+                    "gate": preflight["status"], "paths": changed_files,
+                    "note": preflight["status"],
+                })
+                return {
+                    "cycle_id": cycle_id,
+                    "status": preflight["status"],
+                    "changed_files": changed_files,
+                    "quorum_result": preflight["quorum_result"],
+                    "ratchet_verification": preflight["ratchet_result"],
+                }
+
+            # 6. Re-fingerprint, РЕАЛЬНОЕ применение диффа в песочнице, прогон
+            # тестов внутри неё и публикация проверенного кандидата в ветку.
+            merge_result = self.commit_gate.verify_and_merge(
+                diff_content=candidate_diff,
+                preflight_hash=preflight["preflight_fingerprint"],
+                commit_message=f"Autonomous Self-Evo Cycle {cycle_id} [shrink-only verified]",
+                sandbox_path=sandbox["absolute_path"],
+                publish_branch=publish_branch,
+            )
+        finally:
+            # 7. Очистка песочницы (Worktree Lifecycle Manager) — на любом пути,
+            # включая исключение. Опубликованный коммит переживает удаление
+            # песочницы: ветка publish_branch держит объект достижимым.
             self.sandbox_manager.remove_sandbox(task_id=cycle_id)
+
+        if not merge_result.get("merged"):
+            # Отказ применения / красные тесты / занятая ветка. Отката как
+            # такового не требуется: раз публикация идёт в новую ветку, а не в
+            # main, неудачный кандидат просто никогда не публикуется, а его
+            # коммит уходит вместе с песочницей.
+            logger.warning(f"Кандидат цикла {cycle_id} отклонён на этапе слияния: {merge_result['status']}")
+            _ledger_append(self.workspace_root, {
+                "run_id": cycle_id, "event": "gate", "phase": "BUILD",
+                "actor": "EvolutionDaemon", "decision": "rejected",
+                "commit": merge_result.get("sandbox_commit"),
+                "paths": changed_files, "note": merge_result["status"],
+            })
+            self._assert_head_unchanged(head_before, cycle_id)
             return {
                 "cycle_id": cycle_id,
-                "status": preflight["status"],
+                "status": merge_result["status"],
                 "changed_files": changed_files,
-                "quorum_result": preflight["quorum_result"],
-                "ratchet_verification": preflight["ratchet_result"],
+                "merge_result": merge_result,
+                "refactor_plan": refactor_plan,
             }
-
-        # 6. Верификация Re-fingerprint и 3-Way слияние
-        merge_result = self.commit_gate.verify_and_merge(
-            diff_content=candidate_diff,
-            preflight_hash=preflight["preflight_fingerprint"],
-            commit_message=f"Autonomous Self-Evo Cycle {cycle_id} [shrink-only verified]",
-        )
-
-        # 7. Очистка песочницы (Worktree Lifecycle Manager)
-        self.sandbox_manager.remove_sandbox(task_id=cycle_id)
 
         # 8. Принцип 15: успех — только по фактически проверенному результату
         # храповиков, не по факту вызова. Раньше здесь стоял безусловный
@@ -231,7 +326,21 @@ class AutonomousEvolutionDaemon:
             "violations": preflight["ratchet_result"]["violations"],
         }
 
-        logger.info(f"Эволюционный цикл {cycle_id} успешно завершен и слит в основную ветку!")
+        self._assert_head_unchanged(head_before, cycle_id)
+        _ledger_append(self.workspace_root, {
+            "run_id": cycle_id, "event": "artifact", "phase": "BUILD",
+            "actor": "EvolutionDaemon", "decision": "published_for_review",
+            "commit": merge_result["commit_sha"], "paths": changed_files,
+            "artifact": merge_result["publish_branch"],
+            "note": f"кандидат верифицирован и опубликован в {merge_result['publish_branch']}; ждёт ревью человека",
+        })
+
+        # Формулировка намеренно НЕ "слит в основную ветку": в main ничего не
+        # мержится и мержиться не может — это право человека (Принцип 13).
+        logger.info(
+            f"Эволюционный цикл {cycle_id} верифицирован; кандидат опубликован в "
+            f"{merge_result['publish_branch']} ({merge_result['commit_sha'][:12]}) и ждёт ревью человека."
+        )
         return {
             "cycle_id": cycle_id,
             "status": "EVOLUTION_CYCLE_SUCCESS",
@@ -240,6 +349,25 @@ class AutonomousEvolutionDaemon:
             "refactor_plan": refactor_plan,
             "ratchet_verification": ratchet_verification,
         }
+
+    def _rev_parse_head(self) -> str:
+        res = subprocess.run(["git", "-C", str(self.workspace_root), "rev-parse", "HEAD"],
+                             capture_output=True, text=True, encoding="utf-8", errors="replace")
+        return res.stdout.strip()
+
+    def _assert_head_unchanged(self, head_before: str, cycle_id: str) -> None:
+        """HEAD рабочей области обязан быть неподвижен после цикла.
+
+        Не косметика: если это когда-нибудь разойдётся, значит конвейер
+        тронул main — прямое нарушение merge_authority: human. Лучше
+        громкий лог сразу, чем молчаливое расхождение.
+        """
+        head_after = self._rev_parse_head()
+        if head_before and head_after and head_before != head_after:
+            logger.error(
+                f"[INVARIANT-VIOLATION] Цикл {cycle_id} сдвинул HEAD рабочей области "
+                f"{head_before[:12]} -> {head_after[:12]}. Слияние в main запрещено политикой."
+            )
 
 
 def main() -> int:

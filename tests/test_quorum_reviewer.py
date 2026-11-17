@@ -33,6 +33,23 @@ class TestQuorumReviewer(unittest.TestCase):
         self.assertEqual(res["perspectives"]["security"]["decision"], "REJECT")
         self.assertEqual(res["perspectives"]["security"]["fallback_action"], "FAIL_CLOSED")
 
+    def test_security_veto_is_case_insensitive_on_protected_paths(self):
+        """Путь в нижнем регистре не должен обходить вето Zone P/R.
+
+        На NTFS (и на APFS по умолчанию) supervisor/launcher.py и
+        Supervisor/launcher.py — ОДИН и тот же файл, но Python-строки
+        различаются. До этого фикса `clean_f.startswith("Supervisor/")`
+        пропускал дифф с путём в нижнем регистре, менявший ровно тот же
+        защищённый файл. То же для bible.md и codeowners.
+        """
+        for path in ("supervisor/launcher.py", "SUPERVISOR/launcher.py",
+                     "Supervisor/Constitution/bible.md", "codeowners"):
+            with self.subTest(path=path):
+                res = self.reviewer.review_diff("+ # tweak\n", [path])
+                self.assertEqual(res["perspectives"]["security"]["decision"], "REJECT",
+                                 f"путь {path} обошёл вето Zone P/R")
+                self.assertEqual(res["quorum_decision"], "REJECTED_BY_QUORUM")
+
     def test_functional_veto_on_missing_tests(self):
         """Проверка вето при добавлении продуктового кода без юнит-тестов."""
         diff = "+ def new_feature(): return 42\n"

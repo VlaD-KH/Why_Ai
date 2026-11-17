@@ -43,17 +43,21 @@ class TestCommitGate(unittest.TestCase):
         self.assertEqual(res["status"], "FINGERPRINT_MISMATCH")
         self.assertFalse(res["merged"])
 
-    def test_merge_payload_is_bound_to_the_verified_diff(self):
-        """Отчёт о слиянии обязан нести отпечаток именно проверенного диффа и время."""
+    def test_merge_without_a_sandbox_is_refused(self):
+        """Без песочницы применять дифф некуда — обязан быть отказ, не успех.
+
+        Регрессия, ради которой этот тест существует: до R-4 verify_and_merge
+        возвращал {"status": "MERGED_SUCCESSFULLY"} вообще без git-вызовов,
+        то есть рапортовал об успешном слиянии, не сделав ничего. Теперь
+        отсутствие песочницы — явный fail-closed отказ.
+        """
         diff = "+ def valid(): return 1\n"
         preflight_hash = self.gate.calculate_fingerprint(diff)
         res = self.gate.verify_and_merge(diff, preflight_hash, "Clean verified merge")
 
-        self.assertEqual(res["status"], "MERGED_SUCCESSFULLY")
+        self.assertEqual(res["status"], "NO_SANDBOX_PROVIDED")
+        self.assertFalse(res["merged"])
         self.assertEqual(res["fingerprint_verified"], preflight_hash)
-        self.assertEqual(res["commit_message"], "Clean verified merge")
-        # В поле времени лежал str(Path.cwd()) — рабочий каталог вместо метки времени.
-        datetime.datetime.fromisoformat(res["timestamp"])
 
 
 class TestChangedFileExtraction(unittest.TestCase):
@@ -194,6 +198,149 @@ class TestCommitGateCLI(unittest.TestCase):
         payload = json.loads(proc.stdout)
         self.assertTrue(payload["can_merge"], payload)
         self.assertEqual(proc.returncode, 0)
+
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True,
+                          text=True, encoding="utf-8", errors="replace")
+
+
+def _rev_parse(repo: Path, ref: str = "HEAD") -> str:
+    return _git(repo, "rev-parse", ref).stdout.strip()
+
+
+class TestRealMergePipeline(unittest.TestCase):
+    """Доказательство, что «слияние» действительно происходит в git.
+
+    Ключевое требование: тест обязан отличать реальный коммит от словаря
+    правильной формы. Поэтому проверки идут не по ключам ответа, а по тому,
+    разрешает ли git возвращённый SHA (`cat-file -e`) и лежит ли в нём
+    ожидаемое содержимое (`git show`).
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="commitgate-real-")).resolve()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+        _git(self.tmp, "init", "-q", "-b", "main")
+        _git(self.tmp, "config", "user.email", "fixture@why-ai.test")
+        _git(self.tmp, "config", "user.name", "CommitGate Fixture")
+        (self.tmp / "tests").mkdir()
+        # __init__.py обязателен: прогон идёт с -t <корень>, чтобы тесты могли
+        # импортировать модули проекта, и тогда unittest требует, чтобы стартовый
+        # каталог был импортируемым пакетом (как настоящий tests/ этого репо).
+        (self.tmp / "tests" / "__init__.py").write_text("", encoding="utf-8")
+        # Живой, проходящий набор внутри фикстуры — verify_and_merge реально
+        # его запустит, поэтому он должен существовать и быть зелёным.
+        (self.tmp / "tests" / "test_smoke.py").write_text(
+            "import unittest\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_ok(self):\n"
+            "        self.assertTrue(True)\n",
+            encoding="utf-8")
+        (self.tmp / ".size_ratchets.json").write_text(
+            json.dumps({"schema": "ai-loop/size-ratchets/v1", "principle": "shrink-only",
+                        "limits": {}, "rebaselines": []}), encoding="utf-8")
+        _git(self.tmp, "add", "-A")
+        _git(self.tmp, "commit", "-q", "-m", "fixture baseline")
+
+        self.gate = ReviewedCommitGate(workspace_root=self.tmp)
+        # Песочница — настоящий git worktree, как в проде.
+        self.sandbox = self.tmp / "worktrees" / "cycle-1"
+        _git(self.tmp, "worktree", "add", "-q", "-b", "sandbox/cycle-1", str(self.sandbox), "HEAD")
+
+    def _valid_diff(self) -> str:
+        return (
+            "diff --git a/Core/evolution_log.txt b/Core/evolution_log.txt\n"
+            "new file mode 100644\n"
+            "--- /dev/null\n"
+            "+++ b/Core/evolution_log.txt\n"
+            "@@ -0,0 +1,1 @@\n"
+            "+# cycle marker\n"
+        )
+
+    def test_verified_candidate_becomes_a_real_git_object(self):
+        """Возвращённый SHA обязан существовать в git и содержать нужный дифф."""
+        diff = self._valid_diff()
+        pre_main = _rev_parse(self.tmp, "main")
+
+        res = self.gate.verify_and_merge(
+            diff, self.gate.calculate_fingerprint(diff), "Verified self-evo candidate",
+            sandbox_path=str(self.sandbox), publish_branch="self-evo/cycle-1")
+
+        self.assertEqual(res["status"], "CANDIDATE_VERIFIED_AND_PUBLISHED", res)
+        sha = res["commit_sha"]
+
+        # Настоящий объект, а не строка нужной длины.
+        self.assertEqual(_git(self.tmp, "cat-file", "-e", sha).returncode, 0,
+                         "возвращённый SHA не разрешается git — значит коммита нет")
+        self.assertIn("# cycle marker", _git(self.tmp, "show", sha).stdout)
+        # Ветка публикации указывает ровно на него.
+        self.assertEqual(_rev_parse(self.tmp, "self-evo/cycle-1"), sha)
+        # main НЕ сдвинут: merge_authority: human, BIBLE Принцип 13.
+        self.assertEqual(_rev_parse(self.tmp, "main"), pre_main)
+        self.assertTrue(res["human_action_required"])
+
+    def test_failing_tests_publish_nothing_and_leave_main_untouched(self):
+        """Красный прогон в песочнице обязан остановить публикацию.
+
+        Это и есть «откат» в текущей архитектуре: раз слияние идёт в новую
+        ветку, а не в main, откатывать нечего — неудачный кандидат просто
+        никогда не публикуется.
+        """
+        pre_main = _rev_parse(self.tmp, "main")
+        # Дифф ломает тест внутри песочницы.
+        breaking = (
+            "diff --git a/tests/test_smoke.py b/tests/test_smoke.py\n"
+            "--- a/tests/test_smoke.py\n"
+            "+++ b/tests/test_smoke.py\n"
+            "@@ -1,4 +1,4 @@\n"
+            " import unittest\n"
+            " class T(unittest.TestCase):\n"
+            "     def test_ok(self):\n"
+            "-        self.assertTrue(True)\n"
+            "+        self.assertTrue(False)\n"
+        )
+
+        res = self.gate.verify_and_merge(
+            breaking, self.gate.calculate_fingerprint(breaking), "Deliberately broken candidate",
+            sandbox_path=str(self.sandbox), publish_branch="self-evo/cycle-broken")
+
+        self.assertEqual(res["status"], "TEST_FAILURE", res)
+        self.assertFalse(res["merged"])
+        self.assertEqual(_rev_parse(self.tmp, "main"), pre_main)
+        self.assertNotEqual(
+            _git(self.tmp, "rev-parse", "--verify", "--quiet", "self-evo/cycle-broken").returncode, 0,
+            "сломанный кандидат не должен быть опубликован")
+
+    def test_unapplyable_patch_is_refused_before_any_commit(self):
+        """Невалидный дифф — отказ на git apply --check, без коммита."""
+        garbage = (
+            "diff --git a/Core/nope.txt b/Core/nope.txt\n"
+            "--- a/Core/nope.txt\n"
+            "+++ b/Core/nope.txt\n"
+            "+нет заголовка ханка\n"
+        )
+        res = self.gate.verify_and_merge(
+            garbage, self.gate.calculate_fingerprint(garbage), "Broken patch",
+            sandbox_path=str(self.sandbox), publish_branch="self-evo/cycle-garbage")
+
+        self.assertEqual(res["status"], "PATCH_APPLY_FAILED", res)
+        self.assertFalse(res["merged"])
+        self.assertNotIn("commit_sha", res)
+
+    def test_existing_publish_branch_is_not_overwritten(self):
+        """Занятая ветка публикации — отказ, а не тихая перезапись чужой работы."""
+        _git(self.tmp, "branch", "self-evo/cycle-1", "main")
+        diff = self._valid_diff()
+        res = self.gate.verify_and_merge(
+            diff, self.gate.calculate_fingerprint(diff), "Collides with existing branch",
+            sandbox_path=str(self.sandbox), publish_branch="self-evo/cycle-1")
+
+        self.assertEqual(res["status"], "SELF_EVO_BRANCH_COLLISION", res)
+        self.assertFalse(res["merged"])
+        # Существующая ветка осталась на main, её не перебили кандидатом.
+        self.assertEqual(_rev_parse(self.tmp, "self-evo/cycle-1"), _rev_parse(self.tmp, "main"))
 
 
 if __name__ == "__main__":

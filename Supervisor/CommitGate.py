@@ -233,6 +233,19 @@ class ReviewedCommitGate:
                     "git_error": (committed.stderr or committed.stdout or "").strip()}
         sandbox_sha = self._git(["rev-parse", "HEAD"], cwd=sandbox).stdout.strip()
 
+        # 2b. Храповик по КАНДИДАТУ (R-5b). stage_preflight мерит файлы рабочей
+        #     области до патча — рост, который вносит сам дифф, там не виден.
+        #     Здесь размеры берутся из песочницы с применённым кандидатом, а
+        #     лимиты — из реестра рабочей области (копию в песочнице кандидат
+        #     мог переписать). До тестов: дешевле и не исполняет код кандидата.
+        candidate_ratchet = self.ratchets.check_paths(
+            extract_changed_files(diff_content), persist=False, measure_root=sandbox)
+        if not candidate_ratchet["ok"]:
+            return {"status": "SIZE_RATCHET_VIOLATION", "merged": False,
+                    "fingerprint_verified": re_fingerprint,
+                    "sandbox_commit": sandbox_sha,
+                    "ratchet_result": candidate_ratchet}
+
         # 3. Прогнать тесты ВНУТРИ песочницы против этого коммита. Раньше между
         #    созданием и удалением песочницы не выполнялось ничего.
         test_res = self.run_sandbox_tests(sandbox)

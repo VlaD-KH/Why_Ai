@@ -134,13 +134,34 @@ class SizeRatchetsManager:
 
         return True
 
-    def check_paths(self, paths: List[str], max_allowed_growth_ratio: float = 0.15, persist: bool = False) -> Dict[str, Any]:
+    def check_paths(self, paths: List[str], max_allowed_growth_ratio: float = 0.15, persist: bool = False,
+                    measure_root: Optional[Path] = None) -> Dict[str, Any]:
         """Проверка списка путей (диффа) одним вызовом — контракт для CommitGate.
 
         Возвращает структурный список нарушителей, а не один булев флаг: гейт
         обязан показать оператору, что именно раздулось и насколько, а не
         просто отказать. По умолчанию persist=False — это и есть гейт-режим.
+
+        measure_root: где мерить размеры (песочница с применённым кандидатом).
+        Лимиты при этом остаются из реестра self.workspace_root — копию
+        реестра в песочнице кандидат мог бы переписать. Режим всегда только
+        чтение: реестр на диске не меняется.
         """
+        if measure_root is not None:
+            violations = []
+            for rel_path in paths:
+                norm_path = self._normalize(rel_path)
+                full_path = Path(measure_root) / norm_path
+                limit = self.limits.get(norm_path)
+                if limit is None or not full_path.is_file():
+                    continue  # новый или удалённый файл: лимита нет / расти нечему
+                ceiling = int(limit * (1.0 + max_allowed_growth_ratio))
+                size = full_path.stat().st_size
+                if size > ceiling:
+                    violations.append({"path": norm_path, "recorded_limit": limit,
+                                       "ceiling": ceiling, "current_size": size})
+            return {"ok": not violations, "violations": violations,
+                    "checked": [self._normalize(p) for p in paths], "measured_in": str(measure_root)}
         violations: List[Dict[str, Any]] = []
         for rel_path in paths:
             norm_path = self._normalize(rel_path)

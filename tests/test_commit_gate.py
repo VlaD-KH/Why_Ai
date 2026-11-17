@@ -345,3 +345,93 @@ class TestRealMergePipeline(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRatchetMeasuredOnTheCandidate(unittest.TestCase):
+    """Храповик обязан мерить КАНДИДАТА, а не рабочую область до патча.
+
+    До R-5b stage_preflight звал check_paths() по файлам workspace_root, то
+    есть по их размеру ДО применения диффа: рост, который вносит сам
+    кандидат, не измерялся никогда. Пока кандидат был литералом из двух
+    строк, это было незаметно; с настоящим предложителем «shrink-only»
+    оставался бы декларацией. Лимиты при этом берутся из реестра рабочей
+    области — копию в песочнице кандидат мог бы переписать.
+    """
+
+    LIMIT = 20
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="commitgate-ratchet-")).resolve()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        _git(self.tmp, "init", "-q", "-b", "main")
+        _git(self.tmp, "config", "user.email", "fixture@why-ai.test")
+        _git(self.tmp, "config", "user.name", "CommitGate Fixture")
+        (self.tmp / "tests").mkdir()
+        (self.tmp / "tests" / "__init__.py").write_text("", encoding="utf-8")
+        (self.tmp / "tests" / "test_smoke.py").write_text(
+            "import unittest\nclass T(unittest.TestCase):\n    def test_ok(self):\n        self.assertTrue(True)\n",
+            encoding="utf-8")
+        (self.tmp / "Core").mkdir()
+        (self.tmp / "Core" / "notes.txt").write_bytes(b"0123456789abcdefghi\n")  # ровно LIMIT байт
+        (self.tmp / ".size_ratchets.json").write_text(
+            json.dumps({"schema": "ai-loop/size-ratchets/v1", "principle": "shrink-only",
+                        "limits": {"Core/notes.txt": self.LIMIT}, "rebaselines": []}) + "\n",
+            encoding="utf-8", newline="\n")
+        _git(self.tmp, "add", "-A")
+        _git(self.tmp, "commit", "-q", "-m", "fixture baseline")
+        self.gate = ReviewedCommitGate(workspace_root=self.tmp)
+        self.sandbox = self.tmp / "worktrees" / "cycle-r"
+        _git(self.tmp, "worktree", "add", "-q", "-b", "sandbox/cycle-r", str(self.sandbox), "HEAD")
+
+    @staticmethod
+    def _rewrite_notes(new_line: str) -> str:
+        return (
+            "diff --git a/Core/notes.txt b/Core/notes.txt\n"
+            "--- a/Core/notes.txt\n"
+            "+++ b/Core/notes.txt\n"
+            "@@ -1 +1 @@\n"
+            "-0123456789abcdefghi\n"
+            f"+{new_line}\n"
+        )
+
+    def _run(self, diff: str, branch: str):
+        return self.gate.verify_and_merge(diff, self.gate.calculate_fingerprint(diff), "ratchet fixture",
+                                          sandbox_path=str(self.sandbox), publish_branch=branch)
+
+    def test_bloating_candidate_passes_preflight_but_is_not_published(self):
+        bloat = self._rewrite_notes("x" * 200)
+        # Префлайт по рабочей области не видит роста — это и есть дыра.
+        self.assertTrue(self.gate.stage_preflight(bloat)["ratchet_result"]["ok"])
+
+        pre_main = _rev_parse(self.tmp, "main")
+        res = self._run(bloat, "self-evo/cycle-bloat")
+        self.assertEqual(res["status"], "SIZE_RATCHET_VIOLATION", res)
+        self.assertFalse(res["merged"])
+        self.assertEqual(res["ratchet_result"]["violations"][0]["path"], "Core/notes.txt")
+        # 201 байт с LF; 202 — если git в песочнице переписал окончание в CRLF.
+        self.assertGreaterEqual(res["ratchet_result"]["violations"][0]["current_size"], 201)
+        self.assertNotEqual(
+            _git(self.tmp, "rev-parse", "--verify", "--quiet", "self-evo/cycle-bloat").returncode, 0,
+            "раздутый кандидат не должен быть опубликован")
+        self.assertEqual(_rev_parse(self.tmp, "main"), pre_main)
+
+    def test_candidate_within_the_ceiling_is_published(self):
+        res = self._run(self._rewrite_notes("short"), "self-evo/cycle-small")
+        self.assertEqual(res["status"], "CANDIDATE_VERIFIED_AND_PUBLISHED", res)
+
+    def test_candidate_cannot_raise_its_own_limit_in_the_sandbox_copy(self):
+        """Лимиты читаются из реестра рабочей области, а не из песочницы."""
+        registry = json.dumps({"schema": "ai-loop/size-ratchets/v1", "principle": "shrink-only",
+                               "limits": {"Core/notes.txt": 100000}, "rebaselines": []})
+        old_registry = (self.tmp / ".size_ratchets.json").read_text(encoding="utf-8").rstrip("\n")
+        diff = (
+            "diff --git a/.size_ratchets.json b/.size_ratchets.json\n"
+            "--- a/.size_ratchets.json\n"
+            "+++ b/.size_ratchets.json\n"
+            "@@ -1 +1 @@\n"
+            f"-{old_registry}\n"
+            f"+{registry}\n"
+            + self._rewrite_notes("y" * 200)
+        )
+        res = self._run(diff, "self-evo/cycle-raise")
+        self.assertEqual(res["status"], "SIZE_RATCHET_VIOLATION", res)

@@ -24,8 +24,8 @@
     "Eye/Dashboard.tsx": 29988,
     "Eye/TelemetryDock.tsx": 10597,
     "Supervisor/classify_diff.py": 18995,
-    "Supervisor/CommitGate.py": 19518,
-    "Supervisor/EvolutionDaemon.py": 29815,
+    "Supervisor/CommitGate.py": 20705,
+    "Supervisor/EvolutionDaemon.py": 30147,
     "Supervisor/guard-policy-plane.sh": 2245,
     "Supervisor/launcher.py": 10173,
     "Supervisor/miniyaml.py": 8376,
@@ -35,10 +35,10 @@
     "Supervisor/WorktreeSandbox.py": 7152,
     "Supervisor/Constitution/BIBLE.md": 7888,
     "tests/test_classify_diff.py": 2067,
-    "tests/test_commit_gate.py": 22263,
+    "tests/test_commit_gate.py": 25062,
     "tests/test_context_fit.py": 1237,
     "tests/test_daemon_server.py": 23267,
-    "tests/test_evolution_daemon.py": 17745,
+    "tests/test_evolution_daemon.py": 18532,
     "tests/test_launcher.py": 956,
     "tests/test_mcp_server.py": 1741,
     "tests/test_meta_over_patch.py": 6153,
@@ -292,6 +292,34 @@
       "new_limit": 22263,
       "reason": "2026-11-17 R-5b (коммит 3276fac): класс TestRatchetMeasuredOnTheCandidate (3 теста: раздувание кандидата проходит старый префлайт, но не публикуется; рост в пределах потолка публикуется; кандидат не поднимает себе лимит в копии реестра).",
       "at": "2026-11-17T20:21:10.931498+00:00"
+    },
+    {
+      "path": "Supervisor/EvolutionDaemon.py",
+      "old_limit": 29815,
+      "new_limit": 30147,
+      "reason": "2026-11-17 R-5d (коммит 7a41c44): проверка содержимого кандидата (симлинки/gitlink/бинарные патчи) до песочницы. +332 Б.",
+      "at": "2026-11-17T20:29:57.579824+00:00"
+    },
+    {
+      "path": "Supervisor/CommitGate.py",
+      "old_limit": 19518,
+      "new_limit": 20705,
+      "reason": "2026-11-17 R-5d (коммит 7a41c44): scrubbed_environment() — прогон тестов кандидата без секретов оператора в окружении. +1187 Б.",
+      "at": "2026-11-17T20:29:58.028610+00:00"
+    },
+    {
+      "path": "tests/test_evolution_daemon.py",
+      "old_limit": 17745,
+      "new_limit": 18532,
+      "reason": "2026-11-17 R-5d (коммит 7a41c44): тест — симлинк в policy-плоскость не доходит до песочницы.",
+      "at": "2026-11-17T20:29:58.438840+00:00"
+    },
+    {
+      "path": "tests/test_commit_gate.py",
+      "old_limit": 22263,
+      "new_limit": 25062,
+      "reason": "2026-11-17 R-5d (коммит 7a41c44): класс TestSandboxRunsWithoutOperatorSecrets — тест-зонд в песочнице не видит секретов оператора.",
+      "at": "2026-11-17T20:29:58.813420+00:00"
     }
   ]
 }

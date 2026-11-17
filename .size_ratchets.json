@@ -38,7 +38,7 @@
     "tests/test_commit_gate.py": 27224,
     "tests/test_context_fit.py": 1237,
     "tests/test_daemon_server.py": 23267,
-    "tests/test_evolution_daemon.py": 18532,
+    "tests/test_evolution_daemon.py": 21219,
     "tests/test_launcher.py": 956,
     "tests/test_mcp_server.py": 1741,
     "tests/test_meta_over_patch.py": 6153,
@@ -334,6 +334,13 @@
       "new_limit": 27224,
       "reason": "2026-11-17 R-5e (коммит a94cd8b): фикстуры с core.autocrlf=false и LF, как в настоящем репозитории; побайтовые проверки опубликованных блобов.",
       "at": "2026-11-17T20:40:44.705605+00:00"
+    },
+    {
+      "path": "tests/test_evolution_daemon.py",
+      "old_limit": 18532,
+      "new_limit": 21219,
+      "reason": "2026-11-17: класс TestCycleEditsAnExistingFile — регрессия R-5e на уровне цикла (правка существующего LF-файла, побайтовая сверка блоба).",
+      "at": "2026-11-17T20:48:06.015355+00:00"
     }
   ]
 }

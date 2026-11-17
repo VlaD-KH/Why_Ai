@@ -350,6 +350,47 @@ class TestProposerWiring(unittest.TestCase):
         self.assertEqual(proposer.api_key_env, "WHY_AI_FIXTURE_KEY")
 
 
+class TestStatusReport(unittest.TestCase):
+    """`--status` — диагностика оператора перед первым живым запуском.
+
+    Раньше печатала литералы: «IDLE / ARMED», «15/15 BIBLE.md»,
+    «quorum_perspectives: 3» — вне зависимости от того, может ли цикл вообще
+    что-то предложить. Теперь — измеренное, и без значения ключа.
+    """
+
+    def setUp(self):
+        self.root = _make_git_workspace(with_failures=1)
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        conf = self.root / "why_ai_config.yaml"
+        conf.write_text(conf.read_text(encoding="utf-8") + (
+            "\nllm_orchestration:\n  proposer:\n"
+            '    api_key_env: "WHY_AI_FIXTURE_KEY"\n    model: "fixture-model"\n'), encoding="utf-8")
+
+    def test_missing_key_means_not_ready(self):
+        with mock.patch.dict(os.environ, {k: v for k, v in os.environ.items() if k != "WHY_AI_FIXTURE_KEY"},
+                             clear=True):
+            report = AutonomousEvolutionDaemon(workspace_root=self.root).status_report()
+        self.assertFalse(report["proposer"]["api_key_present"])
+        self.assertEqual(report["proposer"]["model"], "fixture-model")
+        self.assertFalse(report["ready_to_propose"])
+        self.assertNotIn("ARMED", json.dumps(report, ensure_ascii=False))
+
+    def test_present_key_is_reported_but_never_printed(self):
+        secret = "sk-fixture-must-not-leak"
+        with mock.patch.dict(os.environ, {"WHY_AI_FIXTURE_KEY": secret}):
+            report = AutonomousEvolutionDaemon(workspace_root=self.root).status_report()
+        self.assertTrue(report["proposer"]["api_key_present"])
+        self.assertTrue(report["ready_to_propose"])  # фикстура: self_evo + enabled
+        self.assertNotIn(secret, json.dumps(report, ensure_ascii=False))
+
+    def test_principle_count_is_measured(self):
+        report = AutonomousEvolutionDaemon(workspace_root=self.root).status_report()
+        bible = Path(__file__).resolve().parent.parent / "Supervisor" / "Constitution" / "BIBLE.md"
+        expected = sum(1 for line in bible.read_text(encoding="utf-8").splitlines()
+                       if line.lstrip().startswith("### Принцип "))
+        self.assertEqual(report["constitution_principles"], expected)
+
+
 class TestCycleEditsAnExistingFile(unittest.TestCase):
     """Сквозной сценарий, которым найден R-5e, — как постоянный тест.
 

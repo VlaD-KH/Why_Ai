@@ -190,6 +190,44 @@ class AutonomousEvolutionDaemon:
             logger.warning(f"Предложитель не построен ({type(exc).__name__}: {exc}) — циклы будут отказывать.")
             return None
 
+    def status_report(self) -> Dict[str, Any]:
+        """Что цикл может сделать прямо сейчас — измеренное, только чтение.
+
+        Раньше `--status` печатал литералы («IDLE / ARMED», «15/15 BIBLE.md»,
+        «quorum_perspectives: 3») независимо от того, способен ли цикл хоть
+        что-то предложить. Значение ключа не читается в отчёт — только факт
+        его наличия (Принцип 14). Режим резолвится напрямую, не через
+        enforce_mode_policy(): диагностика не шлёт SIGTERM как побочный эффект.
+        """
+        mode = self.orchestrator.resolve_active_mode()
+        proposer = self.proposer
+        env_name = getattr(proposer, "api_key_env", None)
+        key_present = bool(env_name and (os.getenv(env_name) or "").strip())
+        bible = Path(__file__).resolve().parent / "Constitution" / "BIBLE.md"
+        try:
+            principles = sum(1 for line in bible.read_text(encoding="utf-8").splitlines()
+                             if line.lstrip().startswith("### Принцип "))
+        except OSError:
+            principles = None
+        background_allowed = mode["mode"] != MODE_PROD_EVO
+        return {
+            "daemon": "AutonomousEvolutionDaemon",
+            "enabled": self.enabled,
+            "active_mode": mode["mode"],
+            "mode_source": mode["source"],
+            "background_allowed": background_allowed,
+            "proposer": {
+                "configured": proposer is not None,
+                "connector": type(proposer).__name__ if proposer is not None else None,
+                "model": getattr(proposer, "model", None),
+                "api_key_env": env_name,
+                "api_key_present": key_present,
+            },
+            "ready_to_propose": bool(self.enabled and background_allowed and proposer is not None and key_present),
+            "quorum": "3 детерминированные Python-эвристики (не модели; Принцип 8 не выполнен)",
+            "constitution_principles": principles,
+        }
+
     def _save_proposal_artifact(self, cycle_id: str, proposal: Dict[str, Any]) -> Optional[str]:
         """Что показали модели и что она ответила — восстановимо после цикла.
 
@@ -463,20 +501,7 @@ def main() -> int:
         # Только чтение: резолвит режим напрямую, а не через
         # enforce_mode_policy(), которая в [prod_evo] реально шлёт SIGTERM.
         # Диагностика не имеет права глушить процессы как побочный эффект.
-        mode_resolution = daemon.orchestrator.resolve_active_mode()
-        status = {
-            "daemon": "AutonomousEvolutionDaemon",
-            "state": "IDLE / ARMED",
-            "enabled": daemon.enabled,
-            "active_mode": mode_resolution["mode"],
-            "mode_source": mode_resolution["source"],
-            "background_allowed": mode_resolution["mode"] != MODE_PROD_EVO,
-            "idempotency_gate": True,
-            "shrink_only_active": True,
-            "quorum_perspectives": 3,
-            "verified_invariants": "15/15 BIBLE.md",
-        }
-        print(json.dumps(status, indent=2, ensure_ascii=False))
+        print(json.dumps(daemon.status_report(), indent=2, ensure_ascii=False))
         return 0
 
     parser.print_help()

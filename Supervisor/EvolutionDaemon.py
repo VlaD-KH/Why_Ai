@@ -7,7 +7,6 @@
 """
 
 import argparse
-import datetime
 import json
 import logging
 import os
@@ -24,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "Core"))
 try:
     from WorktreeSandbox import WorktreeSandboxManager
     from AutonomyGate import autonomous_path_violations
+    from ProposalSynthesizer import synthesize
     from QuorumReviewer import MultiModelQuorumReviewer
     from CommitGate import ReviewedCommitGate, extract_changed_files
     from miniyaml import parse_yaml
@@ -34,6 +34,7 @@ try:
 except ImportError:
     from Supervisor.WorktreeSandbox import WorktreeSandboxManager  # type: ignore
     from Supervisor.AutonomyGate import autonomous_path_violations  # type: ignore
+    from Supervisor.ProposalSynthesizer import synthesize  # type: ignore
     from Supervisor.QuorumReviewer import MultiModelQuorumReviewer  # type: ignore
     from Supervisor.CommitGate import ReviewedCommitGate, extract_changed_files  # type: ignore
     from Supervisor.miniyaml import parse_yaml  # type: ignore
@@ -88,14 +89,25 @@ class IdempotencyGate:
         self.require_failure_binding = require_failure_binding
         self.shrink_only_ratchet = shrink_only_ratchet
 
-    def validate_proposal(self, refactor_plan: Dict[str, Any], changed_files: List[str]) -> Tuple[bool, str]:
-        """Проверка полезности и идемпотентности предлагаемого изменения."""
-        # 1. Failure-Binding Rule
+    def validate_binding(self, refactor_plan: Dict[str, Any]) -> Tuple[bool, str]:
+        """Failure-Binding Rule: без зарегистрированных сбоев цикл не начинается.
+
+        Отдельно от проверки путей: её результат нужен ДО вызова предложителя,
+        чтобы не платить за модель, когда предлагать нечего.
+        """
         if self.require_failure_binding:
             patterns = refactor_plan.get("patterns", [])
             total_failures = refactor_plan.get("total_failures", 0)
             if not patterns and total_failures == 0 and not refactor_plan.get("forced"):
                 return False, "IDEMPOTENCY_REJECTED: Нет зарегистрированных сбоев в failures.jsonl (Action Bias Prevention)"
+        return True, "BINDING_PASSED"
+
+    def validate_proposal(self, refactor_plan: Dict[str, Any], changed_files: List[str]) -> Tuple[bool, str]:
+        """Проверка полезности и идемпотентности предлагаемого изменения."""
+        # 1. Failure-Binding Rule
+        bound, reason = self.validate_binding(refactor_plan)
+        if not bound:
+            return False, reason
 
         # 2. Пути, которые автономный кандидат вправе авторствовать. Раньше —
         # подстрока `"Supervisor/" in f or "BIBLE.md" in f`, пропускавшая
@@ -114,9 +126,13 @@ class AutonomousEvolutionDaemon:
     Автономный оркестратор рекурсивного саморазвития ядра.
     """
 
-    def __init__(self, workspace_root: Optional[Path] = None) -> None:
+    def __init__(self, workspace_root: Optional[Path] = None, proposer: Any = None) -> None:
         self.workspace_root = (workspace_root or Path.cwd()).resolve()
         self.config = self._load_config()
+        # Предложитель (R-3) приходит инъекцией: тесты подставляют подделку, в
+        # проде строится LLMConnector из why_ai_config.yaml. Демон не знает,
+        # что за этим объектом сеть (Принцип 15 — сеть только в Tool/connectors/).
+        self.proposer = proposer if proposer is not None else self._build_default_proposer()
         self.sandbox_manager = WorktreeSandboxManager(workspace_root=self.workspace_root)
         self.quorum_reviewer = MultiModelQuorumReviewer(workspace_root=self.workspace_root)
         self.commit_gate = ReviewedCommitGate(workspace_root=self.workspace_root)
@@ -153,6 +169,45 @@ class AutonomousEvolutionDaemon:
             )
             return {"background_allowed": False, "mode_resolution": mode_resolution, "sigterm": sigterm_report}
         return {"background_allowed": True, "mode_resolution": mode_resolution, "sigterm": None}
+
+    def _build_default_proposer(self) -> Any:
+        """LLMConnector по блоку llm_orchestration.proposer; None — отказ, не падение.
+
+        Без ключа в окружении коннектор строится, но на вызове отвечает
+        NO_API_KEY без сетевого запроса — цикл получит PROPOSER_UNAVAILABLE.
+        """
+        conf = (self.config.get("llm_orchestration") or {}).get("proposer") or {}
+        mapping = {"api_key_env": "api_key_env", "model": "model", "max_tokens": "max_tokens",
+                   "effort": "effort", "timeout_seconds": "timeout", "max_retries": "max_retries"}
+        kwargs = {dst: conf[src] for src, dst in mapping.items() if src in conf}
+        try:
+            connectors = str(Path(__file__).resolve().parent.parent / "Tool" / "connectors")
+            if connectors not in sys.path:
+                sys.path.insert(0, connectors)
+            from llm_connector import LLMConnector  # type: ignore
+            return LLMConnector(**kwargs)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Предложитель не построен ({type(exc).__name__}: {exc}) — циклы будут отказывать.")
+            return None
+
+    def _save_proposal_artifact(self, cycle_id: str, proposal: Dict[str, Any]) -> Optional[str]:
+        """Что показали модели и что она ответила — восстановимо после цикла.
+
+        `.ai-loop/artifacts/` исключён из классификации policy (служебная
+        бухгалтерия ai-loop), поэтому запись сюда не порождает дифф кода.
+        """
+        try:
+            out_dir = self.workspace_root / ".ai-loop" / "artifacts" / cycle_id
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out = out_dir / "proposal.json"
+            keep = ("status", "error", "model", "usage", "stop_reason", "prompt_sha256",
+                    "context_paths", "prompt", "response_text", "diff")
+            out.write_text(json.dumps({k: proposal.get(k) for k in keep}, ensure_ascii=False, indent=2),
+                           encoding="utf-8")
+            return out.relative_to(self.workspace_root).as_posix()
+        except Exception as exc:  # noqa: BLE001 — артефакт не критичен для цикла
+            logger.warning(f"Артефакт предложения не записан: {exc}")
+            return None
 
     def _load_config(self) -> Dict[str, Any]:
         """Загрузка why_ai_config.yaml."""
@@ -205,51 +260,53 @@ class AutonomousEvolutionDaemon:
         if force:
             refactor_plan["forced"] = True
 
-        # 2. Синтез кандидатного диффа оптимизации — единственный источник
-        # списка затронутых файлов; changed_files выводится из ЭТОГО диффа
-        # (extract_changed_files), а не задаётся отдельным литералом. Раньше
-        # здесь стоял захардкоженный ["Core/evolution_log.txt",
-        # "tests/test_meta_over_patch.py"] — список, который не совпадал с
-        # тем, что реально менял дифф, и это же скрывало вето Zone P/R в
-        # CommitGate (см. extract_changed_files).
-        # ВАЖНО: это по-прежнему фиктивный кандидат-заглушка (две строки
-        # комментария), а не результат синтеза — настоящий предложитель это
-        # R-3 (Tool/connectors/llm_connector.py), он заменит весь этот блок.
-        # Но заголовки диффа теперь СИНТАКСИЧЕСКИ ВАЛИДНЫ: раньше не было ни
-        # `new file mode`, ни `@@`-заголовка ханка, и `git apply --check` на
-        # этот литерал отвечал "patch with only garbage". Пока verify_and_merge
-        # возвращал словарь без git-вызовов, это ничего не ломало; с реальным
-        # `git apply` (R-4) невалидный дифф означал бы, что цикл не может
-        # завершиться успешно НИ РАЗУ — не временное ограничение, а системная
-        # невозможность. Содержимое осталось прежним, исправлен только синтаксис.
-        _log_lines = [
-            f"# Evolution Cycle {cycle_id} verified at {datetime.datetime.now(datetime.timezone.utc).isoformat()}",
-            f"# Refactor objective: {refactor_plan.get('title', 'Self-Evo Optimization')}",
-        ]
-        candidate_diff = (
-            "diff --git a/Core/evolution_log.txt b/Core/evolution_log.txt\n"
-            "new file mode 100644\n"
-            "--- /dev/null\n"
-            "+++ b/Core/evolution_log.txt\n"
-            f"@@ -0,0 +1,{len(_log_lines)} @@\n"
-            + "".join(f"+{line}\n" for line in _log_lines)
-        )
-        changed_files = extract_changed_files(candidate_diff)
-
-        # 3. Idempotency Gate — проверяется против того же списка файлов,
-        # что реально в диффе.
-        valid, reason = self.idempotency_gate.validate_proposal(refactor_plan, changed_files)
-        if not valid:
+        # 2. Привязка к сбоям — ДО вызова модели: без сбоев предлагать нечего,
+        # и платить за вызов незачем.
+        bound, reason = self.idempotency_gate.validate_binding(refactor_plan)
+        if not bound:
             logger.info(f"Idempotency Gate: {reason}")
-            return {"cycle_id": cycle_id, "status": "IDEMPOTENT_SKIPPED", "reason": reason, "changed_files": changed_files}
+            return {"cycle_id": cycle_id, "status": "IDEMPOTENT_SKIPPED", "reason": reason, "changed_files": []}
 
         _ledger_append(self.workspace_root, {
             "run_id": cycle_id, "event": "run_start", "phase": "BUILD",
             "actor": "EvolutionDaemon",
             "idea": refactor_plan.get("title", "Self-Evo Optimization"),
-            "paths": changed_files,
             "note": f"autonomous self-evo cycle; failures_bound={refactor_plan.get('total_failures', 0)}",
         })
+
+        # 3. Синтез кандидата предложителем (R-5). Раньше здесь стоял литерал —
+        # дифф из двух строк комментария, который цикл «успешно» публиковал
+        # при любом состоянии. Нет предложителя или валидного ответа — нет
+        # кандидата: fail-closed, ничего не публикуется.
+        proposal = synthesize(self.proposer, refactor_plan, self.workspace_root)
+        artifact = self._save_proposal_artifact(cycle_id, proposal)
+        _ledger_append(self.workspace_root, {
+            "run_id": cycle_id, "event": "note", "phase": "BUILD", "actor": "EvolutionDaemon",
+            "decision": proposal["status"], "artifact": artifact,
+            "note": json.dumps({"model": proposal.get("model"), "usage": proposal.get("usage"),
+                                "prompt_sha256": proposal.get("prompt_sha256"),
+                                "error": proposal.get("error")}, ensure_ascii=False),
+        })
+        if not proposal["ok"]:
+            logger.warning(f"Цикл {cycle_id}: кандидата нет ({proposal['status']}: {proposal.get('error')}).")
+            return {"cycle_id": cycle_id, "status": proposal["status"], "error": proposal.get("error"),
+                    "changed_files": [], "proposal_artifact": artifact}
+
+        candidate_diff = proposal["diff"]
+        # changed_files выводится из ЭТОГО диффа (extract_changed_files), а не
+        # задаётся отдельным списком — иначе гейты проверяли бы не те файлы.
+        changed_files = extract_changed_files(candidate_diff)
+
+        # 4. Пути кандидата (AutonomyGate) — до песочницы.
+        valid, reason = self.idempotency_gate.validate_proposal(refactor_plan, changed_files)
+        if not valid:
+            logger.warning(f"Цикл {cycle_id}: {reason}")
+            _ledger_append(self.workspace_root, {
+                "run_id": cycle_id, "event": "gate", "phase": "BUILD", "actor": "EvolutionDaemon",
+                "decision": "rejected", "gate": "POLICY_REJECTED", "paths": changed_files, "note": reason,
+            })
+            return {"cycle_id": cycle_id, "status": "POLICY_REJECTED", "reason": reason,
+                    "changed_files": changed_files, "proposal_artifact": artifact}
 
         # Инвариант: main не должен сдвинуться ни при каком исходе цикла.
         # Слияние идёт в отдельную ветку self-evo/<cycle_id> — merge_authority:
@@ -288,7 +345,7 @@ class AutonomousEvolutionDaemon:
             merge_result = self.commit_gate.verify_and_merge(
                 diff_content=candidate_diff,
                 preflight_hash=preflight["preflight_fingerprint"],
-                commit_message=f"Autonomous Self-Evo Cycle {cycle_id} [shrink-only verified]",
+                commit_message=f"Autonomous Self-Evo Cycle {cycle_id} [proposer={proposal.get('model')}]",
                 sandbox_path=sandbox["absolute_path"],
                 publish_branch=publish_branch,
             )

@@ -57,8 +57,12 @@ def _policy_repo(workspace_root: Path) -> Path:
     return MODULE_REPO
 
 
-def _floor_violation(path: str) -> str:
-    """Структурный пол: выход за корень и запрещённые пути, без классификатора."""
+def floor_violation(path: str) -> str:
+    """Структурный пол: выход за корень и запрещённые пути, без классификатора.
+
+    Публичная: ProposalSynthesizer тем же правилом решает, какие файлы
+    вообще показывать модели.
+    """
     if not path:
         return "EMPTY_PATH"
     if path.startswith("/") or re.match(r"^[A-Za-z]:", path) or ".." in path.split("/"):
@@ -95,7 +99,7 @@ def autonomous_path_violations(paths: List[str], workspace_root: Path) -> List[D
         return [{"path": None, "reason": "EMPTY_CANDIDATE"}]
 
     normalized = [p.replace("\\", "/").strip() for p in paths]
-    violations = [{"path": p, "reason": r} for p in normalized for r in [_floor_violation(p)] if r]
+    violations = [{"path": p, "reason": r} for p in normalized for r in [floor_violation(p)] if r]
     if violations:
         return violations
 

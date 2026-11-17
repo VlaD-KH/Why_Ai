@@ -16,6 +16,7 @@ Core/server.py и не требует ни одной правки Supervisor/.
 
 import json
 import logging
+import os
 import time
 import urllib.error
 import urllib.request
@@ -236,8 +237,24 @@ def _default_get(url: str, timeout: float) -> Tuple[int, bytes]:
     return _urlopen_status_body(urllib.request.Request(url, method="GET"), timeout)
 
 
+# Общий секрет для внеполосного /panic. Введён в R-2 вместе с авторизацией
+# маршрута: до этого POST /api/panic не имел аутентификации вообще при
+# Access-Control-Allow-Origin: *. Имя переменной обязано совпадать с
+# Core/server.py:PANIC_TOKEN_ENV — иначе мост получает 401 и честно, но
+# бесполезно рапортует оператору «останов НЕ подтверждён».
+PANIC_TOKEN_ENV = "WHY_AI_PANIC_TOKEN"
+
+
 def _default_post(url: str, timeout: float) -> Tuple[int, bytes]:
-    return _urlopen_status_body(urllib.request.Request(url, method="POST", data=b""), timeout)
+    headers: Dict[str, str] = {}
+    token = (os.getenv(PANIC_TOKEN_ENV) or "").strip()
+    if token:
+        headers["X-Why-Ai-Panic-Token"] = token
+    # Пустой токен не подставляется: пусть бэкенд ответит 401 и оператор
+    # увидит явный отказ, вместо того чтобы мост маскировал отсутствие
+    # конфигурации видимостью нормального запроса.
+    return _urlopen_status_body(
+        urllib.request.Request(url, method="POST", data=b"", headers=headers), timeout)
 
 
 class TelegramUpdatesPoller:

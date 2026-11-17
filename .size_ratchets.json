@@ -24,7 +24,7 @@
     "Eye/Dashboard.tsx": 29988,
     "Eye/TelemetryDock.tsx": 10597,
     "Supervisor/classify_diff.py": 18995,
-    "Supervisor/CommitGate.py": 20705,
+    "Supervisor/CommitGate.py": 21492,
     "Supervisor/EvolutionDaemon.py": 30147,
     "Supervisor/guard-policy-plane.sh": 2245,
     "Supervisor/launcher.py": 10173,
@@ -35,7 +35,7 @@
     "Supervisor/WorktreeSandbox.py": 7152,
     "Supervisor/Constitution/BIBLE.md": 7888,
     "tests/test_classify_diff.py": 2067,
-    "tests/test_commit_gate.py": 25062,
+    "tests/test_commit_gate.py": 27224,
     "tests/test_context_fit.py": 1237,
     "tests/test_daemon_server.py": 23267,
     "tests/test_evolution_daemon.py": 18532,
@@ -320,6 +320,20 @@
       "new_limit": 25062,
       "reason": "2026-11-17 R-5d (коммит 7a41c44): класс TestSandboxRunsWithoutOperatorSecrets — тест-зонд в песочнице не видит секретов оператора.",
       "at": "2026-11-17T20:29:58.813420+00:00"
+    },
+    {
+      "path": "Supervisor/CommitGate.py",
+      "old_limit": 20705,
+      "new_limit": 21492,
+      "reason": "2026-11-17 R-5e (коммит a94cd8b): stdin в git apply байтами — в текстовом режиме Windows превращал LF-патч в CRLF, и ни одна правка существующего файла не применялась. +787 Б.",
+      "at": "2026-11-17T20:40:44.297635+00:00"
+    },
+    {
+      "path": "tests/test_commit_gate.py",
+      "old_limit": 25062,
+      "new_limit": 27224,
+      "reason": "2026-11-17 R-5e (коммит a94cd8b): фикстуры с core.autocrlf=false и LF, как в настоящем репозитории; побайтовые проверки опубликованных блобов.",
+      "at": "2026-11-17T20:40:44.705605+00:00"
     }
   ]
 }

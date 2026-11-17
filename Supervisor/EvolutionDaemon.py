@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "Core"))
 
 try:
     from WorktreeSandbox import WorktreeSandboxManager
+    from AutonomyGate import autonomous_path_violations
     from QuorumReviewer import MultiModelQuorumReviewer
     from CommitGate import ReviewedCommitGate, extract_changed_files
     from miniyaml import parse_yaml
@@ -32,6 +33,7 @@ try:
     from launcher import SupervisorLauncher
 except ImportError:
     from Supervisor.WorktreeSandbox import WorktreeSandboxManager  # type: ignore
+    from Supervisor.AutonomyGate import autonomous_path_violations  # type: ignore
     from Supervisor.QuorumReviewer import MultiModelQuorumReviewer  # type: ignore
     from Supervisor.CommitGate import ReviewedCommitGate, extract_changed_files  # type: ignore
     from Supervisor.miniyaml import parse_yaml  # type: ignore
@@ -95,10 +97,14 @@ class IdempotencyGate:
             if not patterns and total_failures == 0 and not refactor_plan.get("forced"):
                 return False, "IDEMPOTENCY_REJECTED: Нет зарегистрированных сбоев в failures.jsonl (Action Bias Prevention)"
 
-        # 2. Запрет на редактирование файлов Supervisor / Zone P/R
-        for f in changed_files:
-            if "Supervisor/" in f or "BIBLE.md" in f:
-                return False, "POLICY_REJECTED: Попытка фоновой модификации Zone P/R (Immutable Core Floor)"
+        # 2. Пути, которые автономный кандидат вправе авторствовать. Раньше —
+        # подстрока `"Supervisor/" in f or "BIBLE.md" in f`, пропускавшая
+        # policy-плоскость, служебные файлы гейтов и нижний регистр на NTFS
+        # (см. Supervisor/AutonomyGate.py).
+        violations = autonomous_path_violations(changed_files, self.workspace_root)
+        if violations:
+            listed = "; ".join(f"{v['path']}: {v['reason']}" for v in violations[:5])
+            return False, f"POLICY_REJECTED: автономный кандидат затрагивает недоступные пути ({listed})"
 
         return True, "IDEMPOTENCY_PASSED"
 

@@ -350,5 +350,53 @@ class TestProposerWiring(unittest.TestCase):
         self.assertEqual(proposer.api_key_env, "WHY_AI_FIXTURE_KEY")
 
 
+class TestCycleEditsAnExistingFile(unittest.TestCase):
+    """Сквозной сценарий, которым найден R-5e, — как постоянный тест.
+
+    Все остальные сквозные тесты демона создают НОВЫЙ файл: в таком диффе
+    нет контекстных строк, и порча патча на Windows (текстовый stdin
+    превращал LF в CRLF) их не задевала. Настоящий предложитель почти всегда
+    правит существующий файл — здесь именно это, и git настроен как в
+    настоящем репозитории (core.autocrlf=false, LF в рабочем дереве).
+    """
+
+    SKILL = "# plan\n\n## Operating Principles\n1. One step = one commit.\n"
+
+    def setUp(self):
+        self.env = _env_without_api_key()
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        self.root = _make_workspace(with_failures=3)
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        skill = self.root / "Tool" / "skills" / "plan" / "SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text(self.SKILL, encoding="utf-8", newline="\n")
+        _git(self.root, "init", "-q")
+        _git(self.root, "config", "core.autocrlf", "false")  # как harden_git_invariants
+        _git(self.root, "config", "user.email", "fixture@why-ai.test")
+        _git(self.root, "config", "user.name", "Evo Fixture")
+        _git(self.root, "add", "-A")
+        _git(self.root, "commit", "-q", "-m", "fixture baseline")
+
+    def test_candidate_editing_an_lf_file_is_applied_and_published_byte_exact(self):
+        edit = (
+            "diff --git a/Tool/skills/plan/SKILL.md b/Tool/skills/plan/SKILL.md\n"
+            "--- a/Tool/skills/plan/SKILL.md\n"
+            "+++ b/Tool/skills/plan/SKILL.md\n"
+            "@@ -2,3 +2,4 @@\n"
+            " \n"
+            " ## Operating Principles\n"
+            " 1. One step = one commit.\n"
+            "+2. DEFINE before PLAN.\n"
+        )
+        res = AutonomousEvolutionDaemon(workspace_root=self.root, proposer=FakeProposer(edit)).run_evolution_cycle(
+            task_name="edit-existing", force=False)
+        self.assertEqual(res["status"], "EVOLUTION_CYCLE_SUCCESS", res.get("merge_result", res))
+        sha = res["merge_result"]["commit_sha"]
+        blob = subprocess.run(["git", "-C", str(self.root), "show", f"{sha}:Tool/skills/plan/SKILL.md"],
+                              capture_output=True).stdout
+        self.assertEqual(blob, (self.SKILL + "2. DEFINE before PLAN.\n").encode("utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()

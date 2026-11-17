@@ -35,6 +35,23 @@ _RENAME_FROM_RE = re.compile(r"^rename from (.+)$")
 _RENAME_TO_RE = re.compile(r"^rename to (.+)$")
 
 
+# Имена переменных окружения, похожие на секрет (BIBLE, Принцип 14).
+_SECRET_ENV_RE = re.compile(r"KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH|COOKIE|SESSION|OPERATORS",
+                            re.IGNORECASE)
+
+
+def scrubbed_environment() -> Dict[str, str]:
+    """Окружение для прогона тестов кандидата — без секретов оператора.
+
+    Тесты в песочнице — код, написанный моделью-предложителем. Песочница —
+    git worktree, а не песочница ОС: у процесса есть сеть и права оператора.
+    Поэтому ключи API, токены Telegram и /panic, ID операторов в окружение
+    кандидата не передаются: что не дано, то не утечёт. Это не изоляция —
+    это только «не вручать ключи»; ограничение записано в docs.
+    """
+    return {k: v for k, v in os.environ.items() if not _SECRET_ENV_RE.search(k)}
+
+
 def extract_changed_files(diff_text: str) -> List[str]:
     """Список аудируемых файлов — из ЗАГОЛОВКОВ unified diff, а не из
     переданного отдельно списка. Раньше `stage_preflight` принимал
@@ -148,6 +165,7 @@ class ReviewedCommitGate:
                  "-s", str(tests_dir), "-t", str(sandbox), "-p", "test_*.py"],
                 cwd=str(sandbox), capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=timeout_s,
+                env=scrubbed_environment(),
             )
         except subprocess.TimeoutExpired:
             return {"passed": False, "status": "TEST_TIMEOUT", "summary": "timeout",

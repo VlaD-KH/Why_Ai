@@ -93,3 +93,31 @@ class TestAutonomousPathGate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAutonomousDiffContent(unittest.TestCase):
+    """Найдено ревью R-5: пути проверены, но не то, ЧЕМ дифф их делает."""
+
+    def test_symlinks_gitlinks_and_binary_patches_are_rejected(self):
+        from Supervisor.AutonomyGate import autonomous_diff_violations
+        cases = {
+            "symlink": "diff --git a/Tool/skills/l b/Tool/skills/l\nnew file mode 120000\n--- /dev/null\n"
+                       "+++ b/Tool/skills/l\n@@ -0,0 +1 @@\n+../../.ai-loop/policy/protected_paths.yaml\n",
+            "gitlink": "diff --git a/Tool/skills/m b/Tool/skills/m\nnew file mode 160000\n",
+            "binary": "diff --git a/Eye/x.png b/Eye/x.png\nnew file mode 100644\nGIT binary patch\nliteral 1\nIc${HU\n",
+            "symlink-edit": "diff --git a/Eye/l b/Eye/l\nindex 1111111..2222222 120000\n--- a/Eye/l\n+++ b/Eye/l\n",
+        }
+        for name, diff in cases.items():
+            with self.subTest(case=name):
+                self.assertTrue(autonomous_diff_violations(diff), name)
+
+    def test_ordinary_text_diff_passes(self):
+        from Supervisor.AutonomyGate import autonomous_diff_violations
+        diff = ("diff --git a/docs/x.md b/docs/x.md\nnew file mode 100644\n--- /dev/null\n+++ b/docs/x.md\n"
+                "@@ -0,0 +1 @@\n+text\n")
+        self.assertEqual(autonomous_diff_violations(diff), [])
+
+    def test_option_like_path_is_rejected_by_the_floor(self):
+        """Путь, начинающийся с «-», ушёл бы в argv классификатора опцией."""
+        violations = autonomous_path_violations(["Tool/skills/a.md", "--repo=/tmp/elsewhere"], Path("."))
+        self.assertIn("OPTION_LIKE_PATH", [v["reason"] for v in violations])

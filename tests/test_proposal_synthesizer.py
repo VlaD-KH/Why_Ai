@@ -173,3 +173,26 @@ class TestSynthesize(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFencesInsideTheDiff(unittest.TestCase):
+    """Найдено ревью R-5: SKILL.md и docs/ содержат блоки кода. Внутри диффа
+    их ограждения идут с префиксом строки диффа (« », «+», «-»), и закрывать
+    блок ответа они не должны — иначе обрезанный дифф не применится никогда."""
+
+    MD_DIFF = (
+        "diff --git a/Tool/skills/plan/SKILL.md b/Tool/skills/plan/SKILL.md\n"
+        "--- a/Tool/skills/plan/SKILL.md\n"
+        "+++ b/Tool/skills/plan/SKILL.md\n"
+        "@@ -1,4 +1,4 @@\n"
+        " # plan\n"
+        "-```bash\n"
+        "+```sh\n"
+        " run\n"
+        " ```\n"
+    )
+
+    def test_inner_code_fences_do_not_truncate_the_diff(self):
+        diff, err = extract_unified_diff(f"Правка:\n```diff\n{self.MD_DIFF}```\n")
+        self.assertIsNone(err)
+        self.assertEqual(diff, self.MD_DIFF)

@@ -435,3 +435,47 @@ class TestRatchetMeasuredOnTheCandidate(unittest.TestCase):
         )
         res = self._run(diff, "self-evo/cycle-raise")
         self.assertEqual(res["status"], "SIZE_RATCHET_VIOLATION", res)
+
+
+class TestSandboxRunsWithoutOperatorSecrets(unittest.TestCase):
+    """Найдено ревью R-5: тесты песочницы — код, написанный моделью, и он
+    исполнялся с полным окружением оператора: ANTHROPIC_API_KEY, токены
+    Telegram и /panic были доступны кандидату. Песочница — git worktree, не
+    песочница ОС, сеть у неё есть, поэтому секреты в неё не передаются."""
+
+    SECRETS = {"ANTHROPIC_API_KEY": "sk-fixture-not-real", "WHY_AI_TELEGRAM_BOT_TOKEN": "1:fixture",
+               "WHY_AI_PANIC_TOKEN": "fixture", "GITHUB_TOKEN": "gho_fixture", "WHY_AI_FIXTURE_SECRET": "x"}
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="commitgate-env-")).resolve()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        _git(self.tmp, "init", "-q", "-b", "main")
+        _git(self.tmp, "config", "user.email", "fixture@why-ai.test")
+        _git(self.tmp, "config", "user.name", "CommitGate Fixture")
+        (self.tmp / "tests").mkdir()
+        (self.tmp / "tests" / "__init__.py").write_text("", encoding="utf-8")
+        (self.tmp / ".size_ratchets.json").write_text(
+            json.dumps({"schema": "ai-loop/size-ratchets/v1", "limits": {}, "rebaselines": []}), encoding="utf-8")
+        _git(self.tmp, "add", "-A")
+        _git(self.tmp, "commit", "-q", "-m", "fixture baseline")
+        self.gate = ReviewedCommitGate(workspace_root=self.tmp)
+        self.sandbox = self.tmp / "worktrees" / "cycle-env"
+        _git(self.tmp, "worktree", "add", "-q", "-b", "sandbox/cycle-env", str(self.sandbox), "HEAD")
+
+    def test_candidate_tests_do_not_see_operator_secrets(self):
+        names = ", ".join(repr(k) for k in sorted(self.SECRETS))
+        probe = [
+            "import os, unittest",
+            "class Probe(unittest.TestCase):",
+            "    def test_no_secrets(self):",
+            f"        self.assertEqual(sorted(k for k in os.environ if k in ({names})), [])",
+        ]
+        diff = ("diff --git a/tests/test_probe.py b/tests/test_probe.py\nnew file mode 100644\n--- /dev/null\n"
+                "+++ b/tests/test_probe.py\n" + f"@@ -0,0 +1,{len(probe)} @@\n"
+                + "".join(f"+{line}\n" for line in probe))
+        from unittest import mock
+        import os as _os
+        with mock.patch.dict(_os.environ, self.SECRETS):
+            res = self.gate.verify_and_merge(diff, self.gate.calculate_fingerprint(diff), "env probe",
+                                             sandbox_path=str(self.sandbox), publish_branch="self-evo/cycle-env")
+        self.assertEqual(res["status"], "CANDIDATE_VERIFIED_AND_PUBLISHED", res.get("test_output_tail", res))

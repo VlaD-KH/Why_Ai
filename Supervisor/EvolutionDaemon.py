@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "Core"))
 
 try:
     from WorktreeSandbox import WorktreeSandboxManager
-    from AutonomyGate import autonomous_path_violations
+    from AutonomyGate import autonomous_diff_violations, autonomous_path_violations
     from ProposalSynthesizer import synthesize
     from QuorumReviewer import MultiModelQuorumReviewer
     from CommitGate import ReviewedCommitGate, extract_changed_files
@@ -33,7 +33,7 @@ try:
     from launcher import SupervisorLauncher
 except ImportError:
     from Supervisor.WorktreeSandbox import WorktreeSandboxManager  # type: ignore
-    from Supervisor.AutonomyGate import autonomous_path_violations  # type: ignore
+    from Supervisor.AutonomyGate import autonomous_diff_violations, autonomous_path_violations  # type: ignore
     from Supervisor.ProposalSynthesizer import synthesize  # type: ignore
     from Supervisor.QuorumReviewer import MultiModelQuorumReviewer  # type: ignore
     from Supervisor.CommitGate import ReviewedCommitGate, extract_changed_files  # type: ignore
@@ -297,8 +297,12 @@ class AutonomousEvolutionDaemon:
         # задаётся отдельным списком — иначе гейты проверяли бы не те файлы.
         changed_files = extract_changed_files(candidate_diff)
 
-        # 4. Пути кандидата (AutonomyGate) — до песочницы.
+        # 4. Пути кандидата и то, ЧЕМ дифф их меняет (AutonomyGate) — до песочницы.
         valid, reason = self.idempotency_gate.validate_proposal(refactor_plan, changed_files)
+        content_violations = autonomous_diff_violations(candidate_diff)
+        if valid and content_violations:
+            valid = False
+            reason = "POLICY_REJECTED: " + "; ".join(v["reason"] for v in content_violations)
         if not valid:
             logger.warning(f"Цикл {cycle_id}: {reason}")
             _ledger_append(self.workspace_root, {

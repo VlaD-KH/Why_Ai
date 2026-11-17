@@ -319,6 +319,19 @@ class TestProposerWiring(unittest.TestCase):
         self.assertEqual(self._branches(), [])
         self.assertEqual(self._worktrees_left(), [])
 
+    def test_symlink_into_the_policy_plane_never_reaches_the_sandbox(self):
+        """Путь разрешён (Tool/skills/), но симлинк указывает в зону P."""
+        link = (
+            "diff --git a/Tool/skills/policy b/Tool/skills/policy\n"
+            "new file mode 120000\n--- /dev/null\n+++ b/Tool/skills/policy\n"
+            "@@ -0,0 +1 @@\n+../../.ai-loop/policy/protected_paths.yaml\n\\ No newline at end of file\n"
+        )
+        res = AutonomousEvolutionDaemon(workspace_root=self.root, proposer=FakeProposer(link)).run_evolution_cycle(
+            task_name="symlink", force=False)
+        self.assertEqual(res["status"], "POLICY_REJECTED", res)
+        self.assertIn("SYMLINK", res["reason"])
+        self.assertEqual(self._branches(), [])
+
     def test_default_proposer_is_built_from_the_config_block(self):
         conf = self.root / "why_ai_config.yaml"
         conf.write_text(conf.read_text(encoding="utf-8") + (

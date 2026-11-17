@@ -67,12 +67,35 @@ def floor_violation(path: str) -> str:
         return "EMPTY_PATH"
     if path.startswith("/") or re.match(r"^[A-Za-z]:", path) or ".." in path.split("/"):
         return "PATH_ESCAPES_WORKSPACE"
+    if any(part.startswith("-") for part in path.split("/")):
+        # «--repo=…» ушёл бы в argv классификатора опцией, а не путём.
+        return "OPTION_LIKE_PATH"
     probe = path.casefold()
     if probe.startswith(_FORBIDDEN_PREFIXES):
         return "PROTECTED_PREFIX"
     if any(part in _FORBIDDEN_NAMES for part in probe.split("/")):
         return "PROTECTED_FILE"
     return ""
+
+
+# Чем дифф меняет путь, а не только какой путь: симлинк в разрешённой зоне
+# может указывать в policy-плоскость, gitlink подтягивает чужой репозиторий,
+# бинарный патч нечитаем для ревью человеком.
+_FORBIDDEN_MODE_RE = re.compile(
+    r"^(?:new file mode|new mode|old mode|deleted file mode) (?:120000|160000)\s*$"
+    r"|^index [0-9a-f]+\.\.[0-9a-f]+ (?:120000|160000)\s*$",
+    re.MULTILINE)
+_BINARY_RE = re.compile(r"^GIT binary patch\s*$|^Binary files .* differ\s*$", re.MULTILINE)
+
+
+def autonomous_diff_violations(diff_text: str) -> List[Dict[str, Any]]:
+    """Содержимое диффа, недопустимое для автономного кандидата."""
+    violations: List[Dict[str, Any]] = []
+    if _FORBIDDEN_MODE_RE.search(diff_text or ""):
+        violations.append({"path": None, "reason": "SYMLINK_OR_GITLINK_IN_CANDIDATE"})
+    if _BINARY_RE.search(diff_text or ""):
+        violations.append({"path": None, "reason": "BINARY_PATCH_IN_CANDIDATE"})
+    return violations
 
 
 def _classify(paths: List[str], workspace_root: Path) -> Dict[str, Any]:

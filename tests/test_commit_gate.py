@@ -225,6 +225,9 @@ class TestRealMergePipeline(unittest.TestCase):
         _git(self.tmp, "init", "-q", "-b", "main")
         _git(self.tmp, "config", "user.email", "fixture@why-ai.test")
         _git(self.tmp, "config", "user.name", "CommitGate Fixture")
+        # Как в настоящем репозитории (WorkspaceOrchestrator.harden_git_invariants):
+        # без этого глобальный autocrlf=true на Windows маскирует порчу патча.
+        _git(self.tmp, "config", "core.autocrlf", "false")
         (self.tmp / "tests").mkdir()
         # __init__.py обязателен: прогон идёт с -t <корень>, чтобы тесты могли
         # импортировать модули проекта, и тогда unittest требует, чтобы стартовый
@@ -237,7 +240,7 @@ class TestRealMergePipeline(unittest.TestCase):
             "class T(unittest.TestCase):\n"
             "    def test_ok(self):\n"
             "        self.assertTrue(True)\n",
-            encoding="utf-8")
+            encoding="utf-8", newline="\n")  # LF, как блобы настоящего репозитория
         (self.tmp / ".size_ratchets.json").write_text(
             json.dumps({"schema": "ai-loop/size-ratchets/v1", "principle": "shrink-only",
                         "limits": {}, "rebaselines": []}), encoding="utf-8")
@@ -277,6 +280,13 @@ class TestRealMergePipeline(unittest.TestCase):
         self.assertIn("# cycle marker", _git(self.tmp, "show", sha).stdout)
         # Ветка публикации указывает ровно на него.
         self.assertEqual(_rev_parse(self.tmp, "self-evo/cycle-1"), sha)
+        # Найдено сквозным прогоном R-5: дифф уходил в `git apply` через stdin
+        # в текстовом режиме, и на Windows каждый \n становился \r\n. Патчи с
+        # контекстными строками не применялись, а новые файлы попадали в
+        # коммит с CRLF. Опубликованный блоб — ровно то, что в диффе.
+        blob = subprocess.run(["git", "-C", str(self.tmp), "show", f"{sha}:Core/evolution_log.txt"],
+                              capture_output=True).stdout
+        self.assertEqual(blob, b"# cycle marker\n")
         # main НЕ сдвинут: merge_authority: human, BIBLE Принцип 13.
         self.assertEqual(_rev_parse(self.tmp, "main"), pre_main)
         self.assertTrue(res["human_action_required"])
@@ -345,3 +355,149 @@ class TestRealMergePipeline(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRatchetMeasuredOnTheCandidate(unittest.TestCase):
+    """Храповик обязан мерить КАНДИДАТА, а не рабочую область до патча.
+
+    До R-5b stage_preflight звал check_paths() по файлам workspace_root, то
+    есть по их размеру ДО применения диффа: рост, который вносит сам
+    кандидат, не измерялся никогда. Пока кандидат был литералом из двух
+    строк, это было незаметно; с настоящим предложителем «shrink-only»
+    оставался бы декларацией. Лимиты при этом берутся из реестра рабочей
+    области — копию в песочнице кандидат мог бы переписать.
+    """
+
+    LIMIT = 20
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="commitgate-ratchet-")).resolve()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        _git(self.tmp, "init", "-q", "-b", "main")
+        _git(self.tmp, "config", "user.email", "fixture@why-ai.test")
+        _git(self.tmp, "config", "user.name", "CommitGate Fixture")
+        # Как в настоящем репозитории (WorkspaceOrchestrator.harden_git_invariants):
+        # без этого глобальный autocrlf=true на Windows маскирует порчу патча.
+        _git(self.tmp, "config", "core.autocrlf", "false")
+        (self.tmp / "tests").mkdir()
+        (self.tmp / "tests" / "__init__.py").write_text("", encoding="utf-8")
+        (self.tmp / "tests" / "test_smoke.py").write_text(
+            "import unittest\nclass T(unittest.TestCase):\n    def test_ok(self):\n        self.assertTrue(True)\n",
+            encoding="utf-8")
+        (self.tmp / "Core").mkdir()
+        (self.tmp / "Core" / "notes.txt").write_bytes(b"0123456789abcdefghi\n")  # ровно LIMIT байт
+        (self.tmp / ".size_ratchets.json").write_text(
+            json.dumps({"schema": "ai-loop/size-ratchets/v1", "principle": "shrink-only",
+                        "limits": {"Core/notes.txt": self.LIMIT}, "rebaselines": []}) + "\n",
+            encoding="utf-8", newline="\n")
+        _git(self.tmp, "add", "-A")
+        _git(self.tmp, "commit", "-q", "-m", "fixture baseline")
+        self.gate = ReviewedCommitGate(workspace_root=self.tmp)
+        self.sandbox = self.tmp / "worktrees" / "cycle-r"
+        _git(self.tmp, "worktree", "add", "-q", "-b", "sandbox/cycle-r", str(self.sandbox), "HEAD")
+
+    @staticmethod
+    def _rewrite_notes(new_line: str) -> str:
+        return (
+            "diff --git a/Core/notes.txt b/Core/notes.txt\n"
+            "--- a/Core/notes.txt\n"
+            "+++ b/Core/notes.txt\n"
+            "@@ -1 +1 @@\n"
+            "-0123456789abcdefghi\n"
+            f"+{new_line}\n"
+        )
+
+    def _run(self, diff: str, branch: str):
+        return self.gate.verify_and_merge(diff, self.gate.calculate_fingerprint(diff), "ratchet fixture",
+                                          sandbox_path=str(self.sandbox), publish_branch=branch)
+
+    def test_bloating_candidate_passes_preflight_but_is_not_published(self):
+        bloat = self._rewrite_notes("x" * 200)
+        # Префлайт по рабочей области не видит роста — это и есть дыра.
+        self.assertTrue(self.gate.stage_preflight(bloat)["ratchet_result"]["ok"])
+
+        pre_main = _rev_parse(self.tmp, "main")
+        res = self._run(bloat, "self-evo/cycle-bloat")
+        self.assertEqual(res["status"], "SIZE_RATCHET_VIOLATION", res)
+        self.assertFalse(res["merged"])
+        self.assertEqual(res["ratchet_result"]["violations"][0]["path"], "Core/notes.txt")
+        # Ровно 201 байт: 200 символов и LF. Раньше здесь выходило 202 — дифф
+        # уходил в git apply через текстовый stdin, и Windows дописывал CR.
+        self.assertEqual(res["ratchet_result"]["violations"][0]["current_size"], 201)
+        self.assertNotEqual(
+            _git(self.tmp, "rev-parse", "--verify", "--quiet", "self-evo/cycle-bloat").returncode, 0,
+            "раздутый кандидат не должен быть опубликован")
+        self.assertEqual(_rev_parse(self.tmp, "main"), pre_main)
+
+    def test_candidate_within_the_ceiling_is_published(self):
+        res = self._run(self._rewrite_notes("short"), "self-evo/cycle-small")
+        self.assertEqual(res["status"], "CANDIDATE_VERIFIED_AND_PUBLISHED", res)
+        # Изменённый LF-файл обязан остаться LF: раньше текстовый stdin на
+        # Windows превращал «+short\n» в «+short\r\n», и CR уходил в коммит.
+        blob = subprocess.run(["git", "-C", str(self.tmp), "show", f"{res['commit_sha']}:Core/notes.txt"],
+                              capture_output=True).stdout
+        self.assertEqual(blob, b"short\n")
+
+    def test_candidate_cannot_raise_its_own_limit_in_the_sandbox_copy(self):
+        """Лимиты читаются из реестра рабочей области, а не из песочницы."""
+        registry = json.dumps({"schema": "ai-loop/size-ratchets/v1", "principle": "shrink-only",
+                               "limits": {"Core/notes.txt": 100000}, "rebaselines": []})
+        old_registry = (self.tmp / ".size_ratchets.json").read_text(encoding="utf-8").rstrip("\n")
+        diff = (
+            "diff --git a/.size_ratchets.json b/.size_ratchets.json\n"
+            "--- a/.size_ratchets.json\n"
+            "+++ b/.size_ratchets.json\n"
+            "@@ -1 +1 @@\n"
+            f"-{old_registry}\n"
+            f"+{registry}\n"
+            + self._rewrite_notes("y" * 200)
+        )
+        res = self._run(diff, "self-evo/cycle-raise")
+        self.assertEqual(res["status"], "SIZE_RATCHET_VIOLATION", res)
+
+
+class TestSandboxRunsWithoutOperatorSecrets(unittest.TestCase):
+    """Найдено ревью R-5: тесты песочницы — код, написанный моделью, и он
+    исполнялся с полным окружением оператора: ANTHROPIC_API_KEY, токены
+    Telegram и /panic были доступны кандидату. Песочница — git worktree, не
+    песочница ОС, сеть у неё есть, поэтому секреты в неё не передаются."""
+
+    SECRETS = {"ANTHROPIC_API_KEY": "sk-fixture-not-real", "WHY_AI_TELEGRAM_BOT_TOKEN": "1:fixture",
+               "WHY_AI_PANIC_TOKEN": "fixture", "GITHUB_TOKEN": "gho_fixture", "WHY_AI_FIXTURE_SECRET": "x"}
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="commitgate-env-")).resolve()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        _git(self.tmp, "init", "-q", "-b", "main")
+        _git(self.tmp, "config", "user.email", "fixture@why-ai.test")
+        _git(self.tmp, "config", "user.name", "CommitGate Fixture")
+        # Как в настоящем репозитории (WorkspaceOrchestrator.harden_git_invariants):
+        # без этого глобальный autocrlf=true на Windows маскирует порчу патча.
+        _git(self.tmp, "config", "core.autocrlf", "false")
+        (self.tmp / "tests").mkdir()
+        (self.tmp / "tests" / "__init__.py").write_text("", encoding="utf-8")
+        (self.tmp / ".size_ratchets.json").write_text(
+            json.dumps({"schema": "ai-loop/size-ratchets/v1", "limits": {}, "rebaselines": []}), encoding="utf-8")
+        _git(self.tmp, "add", "-A")
+        _git(self.tmp, "commit", "-q", "-m", "fixture baseline")
+        self.gate = ReviewedCommitGate(workspace_root=self.tmp)
+        self.sandbox = self.tmp / "worktrees" / "cycle-env"
+        _git(self.tmp, "worktree", "add", "-q", "-b", "sandbox/cycle-env", str(self.sandbox), "HEAD")
+
+    def test_candidate_tests_do_not_see_operator_secrets(self):
+        names = ", ".join(repr(k) for k in sorted(self.SECRETS))
+        probe = [
+            "import os, unittest",
+            "class Probe(unittest.TestCase):",
+            "    def test_no_secrets(self):",
+            f"        self.assertEqual(sorted(k for k in os.environ if k in ({names})), [])",
+        ]
+        diff = ("diff --git a/tests/test_probe.py b/tests/test_probe.py\nnew file mode 100644\n--- /dev/null\n"
+                "+++ b/tests/test_probe.py\n" + f"@@ -0,0 +1,{len(probe)} @@\n"
+                + "".join(f"+{line}\n" for line in probe))
+        from unittest import mock
+        import os as _os
+        with mock.patch.dict(_os.environ, self.SECRETS):
+            res = self.gate.verify_and_merge(diff, self.gate.calculate_fingerprint(diff), "env probe",
+                                             sandbox_path=str(self.sandbox), publish_branch="self-evo/cycle-env")
+        self.assertEqual(res["status"], "CANDIDATE_VERIFIED_AND_PUBLISHED", res.get("test_output_tail", res))

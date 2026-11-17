@@ -35,6 +35,23 @@ _RENAME_FROM_RE = re.compile(r"^rename from (.+)$")
 _RENAME_TO_RE = re.compile(r"^rename to (.+)$")
 
 
+# Имена переменных окружения, похожие на секрет (BIBLE, Принцип 14).
+_SECRET_ENV_RE = re.compile(r"KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH|COOKIE|SESSION|OPERATORS",
+                            re.IGNORECASE)
+
+
+def scrubbed_environment() -> Dict[str, str]:
+    """Окружение для прогона тестов кандидата — без секретов оператора.
+
+    Тесты в песочнице — код, написанный моделью-предложителем. Песочница —
+    git worktree, а не песочница ОС: у процесса есть сеть и права оператора.
+    Поэтому ключи API, токены Telegram и /panic, ID операторов в окружение
+    кандидата не передаются: что не дано, то не утечёт. Это не изоляция —
+    это только «не вручать ключи»; ограничение записано в docs.
+    """
+    return {k: v for k, v in os.environ.items() if not _SECRET_ENV_RE.search(k)}
+
+
 def extract_changed_files(diff_text: str) -> List[str]:
     """Список аудируемых файлов — из ЗАГОЛОВКОВ unified diff, а не из
     переданного отдельно списка. Раньше `stage_preflight` принимал
@@ -116,10 +133,19 @@ class ReviewedCommitGate:
         приём уже применён в WorktreeSandbox._run_git. check=True не
         используем — разбираем returncode явно, как везде в Supervisor/.
         """
-        return subprocess.run(
+        # stdin — БАЙТАМИ. В текстовом режиме Python на Windows переводит каждый
+        # \n в \r\n при записи в pipe: патч для LF-файла переставал совпадать
+        # по контексту (PATCH_APPLY_FAILED на любой правке существующего
+        # файла), а новые файлы уходили в коммит с CRLF. Тесты этого не видели:
+        # глобальный core.autocrlf=true давал CRLF и в рабочем дереве фикстуры.
+        proc = subprocess.run(
             ["git", "-C", str(cwd or self.workspace_root), *args],
-            input=stdin_text,
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            input=None if stdin_text is None else stdin_text.encode("utf-8"),
+            capture_output=True,
+        )
+        return subprocess.CompletedProcess(
+            proc.args, proc.returncode,
+            proc.stdout.decode("utf-8", "replace"), proc.stderr.decode("utf-8", "replace"),
         )
 
     def run_sandbox_tests(self, sandbox: Path, timeout_s: int = 600) -> Dict[str, Any]:
@@ -148,6 +174,7 @@ class ReviewedCommitGate:
                  "-s", str(tests_dir), "-t", str(sandbox), "-p", "test_*.py"],
                 cwd=str(sandbox), capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=timeout_s,
+                env=scrubbed_environment(),
             )
         except subprocess.TimeoutExpired:
             return {"passed": False, "status": "TEST_TIMEOUT", "summary": "timeout",
@@ -232,6 +259,19 @@ class ReviewedCommitGate:
                     "fingerprint_verified": re_fingerprint,
                     "git_error": (committed.stderr or committed.stdout or "").strip()}
         sandbox_sha = self._git(["rev-parse", "HEAD"], cwd=sandbox).stdout.strip()
+
+        # 2b. Храповик по КАНДИДАТУ (R-5b). stage_preflight мерит файлы рабочей
+        #     области до патча — рост, который вносит сам дифф, там не виден.
+        #     Здесь размеры берутся из песочницы с применённым кандидатом, а
+        #     лимиты — из реестра рабочей области (копию в песочнице кандидат
+        #     мог переписать). До тестов: дешевле и не исполняет код кандидата.
+        candidate_ratchet = self.ratchets.check_paths(
+            extract_changed_files(diff_content), persist=False, measure_root=sandbox)
+        if not candidate_ratchet["ok"]:
+            return {"status": "SIZE_RATCHET_VIOLATION", "merged": False,
+                    "fingerprint_verified": re_fingerprint,
+                    "sandbox_commit": sandbox_sha,
+                    "ratchet_result": candidate_ratchet}
 
         # 3. Прогнать тесты ВНУТРИ песочницы против этого коммита. Раньше между
         #    созданием и удалением песочницы не выполнялось ничего.

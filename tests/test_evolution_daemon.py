@@ -9,14 +9,48 @@ Core/MetaOverPatch.generate_refactor_plan(), а не на выдуманной �
 """
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from Core.MetaOverPatch import MetaOverPatchEngine
 from Supervisor.EvolutionDaemon import AutonomousEvolutionDaemon, IdempotencyGate
+
+# Кандидат, которым подделка предложителя отвечает в сквозных тестах: тот же
+# новый файл, что раньше писал захардкоженный литерал, — теперь он приходит
+# от предложителя, как в проде.
+EVOLUTION_LOG_DIFF = (
+    "diff --git a/Core/evolution_log.txt b/Core/evolution_log.txt\n"
+    "new file mode 100644\n"
+    "--- /dev/null\n"
+    "+++ b/Core/evolution_log.txt\n"
+    "@@ -0,0 +1,1 @@\n"
+    "+# Evolution Cycle marker written by the fake proposer\n"
+)
+
+
+class FakeProposer:
+    """Контракт LLMConnector.propose(); сеть не трогается ни при каком окружении."""
+
+    def __init__(self, diff: str = EVOLUTION_LOG_DIFF):
+        self.calls = []
+        self.diff = diff
+
+    def propose(self, prompt, system=None):
+        self.calls.append(prompt)
+        return {"proposed": True, "text": f"```diff\n{self.diff}```", "model": "fake-model",
+                "stop_reason": "end_turn", "error": None, "error_detail": None,
+                "usage": {"input_tokens": 1, "output_tokens": 1}}
+
+
+def _env_without_api_key():
+    """Окружение без ключа: тест не вправе тратить деньги оператора."""
+    return mock.patch.dict(os.environ, {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"},
+                           clear=True)
 
 CONFIG = """system:
   project_name: "EvoFixture"
@@ -126,7 +160,8 @@ class TestEvolutionCycle(unittest.TestCase):
 
     def setUp(self):
         self.root = _make_git_workspace(with_failures=3)
-        self.daemon = AutonomousEvolutionDaemon(workspace_root=self.root)
+        self.proposer = FakeProposer()
+        self.daemon = AutonomousEvolutionDaemon(workspace_root=self.root, proposer=self.proposer)
 
     def tearDown(self):
         shutil.rmtree(self.root, ignore_errors=True)
@@ -219,6 +254,189 @@ class TestEvolutionCycle(unittest.TestCase):
         self.daemon.enabled = False
         res = self.daemon.run_evolution_cycle(task_name="disabled", force=False)
         self.assertEqual(res["status"], "MODULE_DISABLED")
+
+    def test_successful_cycle_keeps_the_prompt_and_answer_for_audit(self):
+        """Кандидат написан моделью — что ей показали и что она ответила,
+        обязано остаться восстановимым (Принцип 9, след в ledger)."""
+        res = self.daemon.run_evolution_cycle(task_name="artifact", force=False)
+        self.assertEqual(res["status"], "EVOLUTION_CYCLE_SUCCESS", res)
+        artifact = self.root / ".ai-loop" / "artifacts" / res["cycle_id"] / "proposal.json"
+        self.assertTrue(artifact.is_file(), "артефакт предложения не записан")
+        saved = json.loads(artifact.read_text(encoding="utf-8"))
+        self.assertEqual(saved["prompt"], self.proposer.calls[0])
+        self.assertIn("Evolution Cycle marker", saved["response_text"])
+        self.assertEqual(saved["model"], "fake-model")
+
+
+class TestProposerWiring(unittest.TestCase):
+    """Звено 4: кандидата синтезирует предложитель, а не литерал."""
+
+    def setUp(self):
+        self.env = _env_without_api_key()
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        self.root = _make_git_workspace(with_failures=3)
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+
+    def _branches(self):
+        out = subprocess.run(["git", "-C", str(self.root), "branch", "--list", "self-evo/*"],
+                             capture_output=True, text=True, encoding="utf-8", errors="replace").stdout
+        return [b.strip() for b in out.splitlines() if b.strip()]
+
+    def _worktrees_left(self):
+        wt = self.root / "worktrees"
+        return [p.name for p in wt.iterdir()] if wt.exists() else []
+
+    def test_without_a_working_proposer_nothing_is_published(self):
+        """Раньше на этом месте стоял фиктивный дифф, и цикл «успешно»
+        публиковал две строки комментария. Нет предложителя — нет кандидата."""
+        daemon = AutonomousEvolutionDaemon(workspace_root=self.root)  # ключа нет в окружении
+        res = daemon.run_evolution_cycle(task_name="no-proposer", force=False)
+        self.assertEqual(res["status"], "PROPOSER_UNAVAILABLE", res)
+        self.assertEqual(self._branches(), [])
+        self.assertEqual(self._worktrees_left(), [])
+        ledger = (self.root / ".ai-loop" / "ledger.jsonl").read_text(encoding="utf-8")
+        self.assertIn("PROPOSER_UNAVAILABLE", ledger)
+
+    def test_proposer_is_not_paid_for_without_bound_failures(self):
+        root = _make_git_workspace(with_failures=0)
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        fake = FakeProposer()
+        res = AutonomousEvolutionDaemon(workspace_root=root, proposer=fake).run_evolution_cycle(
+            task_name="unbound", force=False)
+        self.assertEqual(res["status"], "IDEMPOTENT_SKIPPED", res)
+        self.assertEqual(fake.calls, [], "вызов модели без привязки к сбоям — пустая трата")
+
+    def test_policy_violating_proposal_never_reaches_the_sandbox(self):
+        evil = (
+            "diff --git a/.ai-loop/policy/protected_paths.yaml b/.ai-loop/policy/protected_paths.yaml\n"
+            "new file mode 100644\n--- /dev/null\n+++ b/.ai-loop/policy/protected_paths.yaml\n"
+            "@@ -0,0 +1,1 @@\n+zones: {}\n"
+        )
+        res = AutonomousEvolutionDaemon(workspace_root=self.root, proposer=FakeProposer(evil)).run_evolution_cycle(
+            task_name="evil", force=False)
+        self.assertEqual(res["status"], "POLICY_REJECTED", res)
+        self.assertEqual(self._branches(), [])
+        self.assertEqual(self._worktrees_left(), [])
+
+    def test_symlink_into_the_policy_plane_never_reaches_the_sandbox(self):
+        """Путь разрешён (Tool/skills/), но симлинк указывает в зону P."""
+        link = (
+            "diff --git a/Tool/skills/policy b/Tool/skills/policy\n"
+            "new file mode 120000\n--- /dev/null\n+++ b/Tool/skills/policy\n"
+            "@@ -0,0 +1 @@\n+../../.ai-loop/policy/protected_paths.yaml\n\\ No newline at end of file\n"
+        )
+        res = AutonomousEvolutionDaemon(workspace_root=self.root, proposer=FakeProposer(link)).run_evolution_cycle(
+            task_name="symlink", force=False)
+        self.assertEqual(res["status"], "POLICY_REJECTED", res)
+        self.assertIn("SYMLINK", res["reason"])
+        self.assertEqual(self._branches(), [])
+
+    def test_default_proposer_is_built_from_the_config_block(self):
+        conf = self.root / "why_ai_config.yaml"
+        conf.write_text(conf.read_text(encoding="utf-8") + (
+            "\nllm_orchestration:\n"
+            "  proposer:\n"
+            '    api_key_env: "WHY_AI_FIXTURE_KEY"\n'
+            '    model: "fixture-model"\n'
+            "    max_tokens: 1234\n"
+            '    effort: "low"\n'
+            "    timeout_seconds: 7\n"
+            "    max_retries: 1\n"), encoding="utf-8")
+        proposer = AutonomousEvolutionDaemon(workspace_root=self.root).proposer
+        self.assertIsNotNone(proposer)
+        self.assertEqual(proposer.model, "fixture-model")
+        self.assertEqual(proposer.max_tokens, 1234)
+        self.assertEqual(proposer.api_key_env, "WHY_AI_FIXTURE_KEY")
+
+
+class TestStatusReport(unittest.TestCase):
+    """`--status` — диагностика оператора перед первым живым запуском.
+
+    Раньше печатала литералы: «IDLE / ARMED», «15/15 BIBLE.md»,
+    «quorum_perspectives: 3» — вне зависимости от того, может ли цикл вообще
+    что-то предложить. Теперь — измеренное, и без значения ключа.
+    """
+
+    def setUp(self):
+        self.root = _make_git_workspace(with_failures=1)
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        conf = self.root / "why_ai_config.yaml"
+        conf.write_text(conf.read_text(encoding="utf-8") + (
+            "\nllm_orchestration:\n  proposer:\n"
+            '    api_key_env: "WHY_AI_FIXTURE_KEY"\n    model: "fixture-model"\n'), encoding="utf-8")
+
+    def test_missing_key_means_not_ready(self):
+        with mock.patch.dict(os.environ, {k: v for k, v in os.environ.items() if k != "WHY_AI_FIXTURE_KEY"},
+                             clear=True):
+            report = AutonomousEvolutionDaemon(workspace_root=self.root).status_report()
+        self.assertFalse(report["proposer"]["api_key_present"])
+        self.assertEqual(report["proposer"]["model"], "fixture-model")
+        self.assertFalse(report["ready_to_propose"])
+        self.assertNotIn("ARMED", json.dumps(report, ensure_ascii=False))
+
+    def test_present_key_is_reported_but_never_printed(self):
+        secret = "sk-fixture-must-not-leak"
+        with mock.patch.dict(os.environ, {"WHY_AI_FIXTURE_KEY": secret}):
+            report = AutonomousEvolutionDaemon(workspace_root=self.root).status_report()
+        self.assertTrue(report["proposer"]["api_key_present"])
+        self.assertTrue(report["ready_to_propose"])  # фикстура: self_evo + enabled
+        self.assertNotIn(secret, json.dumps(report, ensure_ascii=False))
+
+    def test_principle_count_is_measured(self):
+        report = AutonomousEvolutionDaemon(workspace_root=self.root).status_report()
+        bible = Path(__file__).resolve().parent.parent / "Supervisor" / "Constitution" / "BIBLE.md"
+        expected = sum(1 for line in bible.read_text(encoding="utf-8").splitlines()
+                       if line.lstrip().startswith("### Принцип "))
+        self.assertEqual(report["constitution_principles"], expected)
+
+
+class TestCycleEditsAnExistingFile(unittest.TestCase):
+    """Сквозной сценарий, которым найден R-5e, — как постоянный тест.
+
+    Все остальные сквозные тесты демона создают НОВЫЙ файл: в таком диффе
+    нет контекстных строк, и порча патча на Windows (текстовый stdin
+    превращал LF в CRLF) их не задевала. Настоящий предложитель почти всегда
+    правит существующий файл — здесь именно это, и git настроен как в
+    настоящем репозитории (core.autocrlf=false, LF в рабочем дереве).
+    """
+
+    SKILL = "# plan\n\n## Operating Principles\n1. One step = one commit.\n"
+
+    def setUp(self):
+        self.env = _env_without_api_key()
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        self.root = _make_workspace(with_failures=3)
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        skill = self.root / "Tool" / "skills" / "plan" / "SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text(self.SKILL, encoding="utf-8", newline="\n")
+        _git(self.root, "init", "-q")
+        _git(self.root, "config", "core.autocrlf", "false")  # как harden_git_invariants
+        _git(self.root, "config", "user.email", "fixture@why-ai.test")
+        _git(self.root, "config", "user.name", "Evo Fixture")
+        _git(self.root, "add", "-A")
+        _git(self.root, "commit", "-q", "-m", "fixture baseline")
+
+    def test_candidate_editing_an_lf_file_is_applied_and_published_byte_exact(self):
+        edit = (
+            "diff --git a/Tool/skills/plan/SKILL.md b/Tool/skills/plan/SKILL.md\n"
+            "--- a/Tool/skills/plan/SKILL.md\n"
+            "+++ b/Tool/skills/plan/SKILL.md\n"
+            "@@ -2,3 +2,4 @@\n"
+            " \n"
+            " ## Operating Principles\n"
+            " 1. One step = one commit.\n"
+            "+2. DEFINE before PLAN.\n"
+        )
+        res = AutonomousEvolutionDaemon(workspace_root=self.root, proposer=FakeProposer(edit)).run_evolution_cycle(
+            task_name="edit-existing", force=False)
+        self.assertEqual(res["status"], "EVOLUTION_CYCLE_SUCCESS", res.get("merge_result", res))
+        sha = res["merge_result"]["commit_sha"]
+        blob = subprocess.run(["git", "-C", str(self.root), "show", f"{sha}:Tool/skills/plan/SKILL.md"],
+                              capture_output=True).stdout
+        self.assertEqual(blob, (self.SKILL + "2. DEFINE before PLAN.\n").encode("utf-8"))
 
 
 if __name__ == "__main__":

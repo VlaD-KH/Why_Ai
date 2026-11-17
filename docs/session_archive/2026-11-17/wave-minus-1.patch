@@ -1,0 +1,71 @@
+diff --git a/.ai-loop/policy/protected_paths.yaml b/.ai-loop/policy/protected_paths.yaml
+index f2f4231..fc2434b 100644
+--- a/.ai-loop/policy/protected_paths.yaml
++++ b/.ai-loop/policy/protected_paths.yaml
+@@ -137,6 +137,7 @@ zones:
+     human_approval_required: false
+     paths:
+       - "Eye/"
++      - ".ai-loop/context.md"   # working memory of the loop; unzoned it was CRITICAL on every edit
+       - "docs/"
+       - "Tool/skills/"
+       - "README.md"
+diff --git a/.github/workflows/ai-loop-enforcement.yml b/.github/workflows/ai-loop-enforcement.yml
+index 9950be1..6fcc866 100644
+--- a/.github/workflows/ai-loop-enforcement.yml
++++ b/.github/workflows/ai-loop-enforcement.yml
+@@ -122,8 +122,15 @@ jobs:
+       - name: A path in no zone must classify CRITICAL
+         run: |
+           set -euo pipefail
++          EXIT_CODE=0
+           OUT=$(python3 .ai-loop/bin/classify_diff.py \
+-                  --paths "ai-loop-canary/definitely-not-in-any-zone.txt" --json)
++                  --paths "ai-loop-canary/definitely-not-in-any-zone.txt" --json) || EXIT_CODE=$?
++          # classify_diff.py exits 10 on CRITICAL / require_human -- exactly the
++          # verdict asserted below. Without this, set -e killed the step at the
++          # assignment and the assertion never ran (same idiom as the classify job).
++          if [ "$EXIT_CODE" -ne 0 ] && [ "$EXIT_CODE" -ne 10 ]; then
++            exit "$EXIT_CODE"
++          fi
+           echo "$OUT"
+           echo "$OUT" | python3 -c "
+           import json,sys
+@@ -135,8 +142,15 @@ jobs:
+       - name: A policy-plane path must classify CRITICAL
+         run: |
+           set -euo pipefail
++          EXIT_CODE=0
+           OUT=$(python3 .ai-loop/bin/classify_diff.py \
+-                  --paths ".ai-loop/policy/protected_paths.yaml" --json)
++                  --paths ".ai-loop/policy/protected_paths.yaml" --json) || EXIT_CODE=$?
++          # classify_diff.py exits 10 on CRITICAL / require_human -- exactly the
++          # verdict asserted below. Without this, set -e killed the step at the
++          # assignment and the assertion never ran (same idiom as the classify job).
++          if [ "$EXIT_CODE" -ne 0 ] && [ "$EXIT_CODE" -ne 10 ]; then
++            exit "$EXIT_CODE"
++          fi
+           echo "$OUT"
+           echo "$OUT" | python3 -c "
+           import json,sys
+@@ -144,3 +158,20 @@ jobs:
+           assert d['risk']=='CRITICAL', f'policy plane not protected: got {d[\"risk\"]}'
+           print('policy plane protection confirmed')
+           "
++
++  # Third, independent check: the evidentiary test suite and the start gate.
++  # A separate job on purpose: the classify job ends at the verdict step on every
++  # zone-R pull request (require_human -> exit 1), so a step appended there would
++  # never run on exactly the changes that need it most.
++  tests:
++    name: unit tests and start gate
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-python@v5
++        with:
++          python-version: "3.11"
++      - name: Evidentiary unit tests
++        run: python -m unittest discover -s tests -p "test_*.py"
++      - name: Start gate (run_mvp.py --self-test must exit 0)
++        run: python run_mvp.py --self-test

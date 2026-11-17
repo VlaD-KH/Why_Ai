@@ -133,10 +133,19 @@ class ReviewedCommitGate:
         приём уже применён в WorktreeSandbox._run_git. check=True не
         используем — разбираем returncode явно, как везде в Supervisor/.
         """
-        return subprocess.run(
+        # stdin — БАЙТАМИ. В текстовом режиме Python на Windows переводит каждый
+        # \n в \r\n при записи в pipe: патч для LF-файла переставал совпадать
+        # по контексту (PATCH_APPLY_FAILED на любой правке существующего
+        # файла), а новые файлы уходили в коммит с CRLF. Тесты этого не видели:
+        # глобальный core.autocrlf=true давал CRLF и в рабочем дереве фикстуры.
+        proc = subprocess.run(
             ["git", "-C", str(cwd or self.workspace_root), *args],
-            input=stdin_text,
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            input=None if stdin_text is None else stdin_text.encode("utf-8"),
+            capture_output=True,
+        )
+        return subprocess.CompletedProcess(
+            proc.args, proc.returncode,
+            proc.stdout.decode("utf-8", "replace"), proc.stderr.decode("utf-8", "replace"),
         )
 
     def run_sandbox_tests(self, sandbox: Path, timeout_s: int = 600) -> Dict[str, Any]:

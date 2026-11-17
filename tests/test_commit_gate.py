@@ -225,6 +225,9 @@ class TestRealMergePipeline(unittest.TestCase):
         _git(self.tmp, "init", "-q", "-b", "main")
         _git(self.tmp, "config", "user.email", "fixture@why-ai.test")
         _git(self.tmp, "config", "user.name", "CommitGate Fixture")
+        # Как в настоящем репозитории (WorkspaceOrchestrator.harden_git_invariants):
+        # без этого глобальный autocrlf=true на Windows маскирует порчу патча.
+        _git(self.tmp, "config", "core.autocrlf", "false")
         (self.tmp / "tests").mkdir()
         # __init__.py обязателен: прогон идёт с -t <корень>, чтобы тесты могли
         # импортировать модули проекта, и тогда unittest требует, чтобы стартовый
@@ -237,7 +240,7 @@ class TestRealMergePipeline(unittest.TestCase):
             "class T(unittest.TestCase):\n"
             "    def test_ok(self):\n"
             "        self.assertTrue(True)\n",
-            encoding="utf-8")
+            encoding="utf-8", newline="\n")  # LF, как блобы настоящего репозитория
         (self.tmp / ".size_ratchets.json").write_text(
             json.dumps({"schema": "ai-loop/size-ratchets/v1", "principle": "shrink-only",
                         "limits": {}, "rebaselines": []}), encoding="utf-8")
@@ -277,6 +280,13 @@ class TestRealMergePipeline(unittest.TestCase):
         self.assertIn("# cycle marker", _git(self.tmp, "show", sha).stdout)
         # Ветка публикации указывает ровно на него.
         self.assertEqual(_rev_parse(self.tmp, "self-evo/cycle-1"), sha)
+        # Найдено сквозным прогоном R-5: дифф уходил в `git apply` через stdin
+        # в текстовом режиме, и на Windows каждый \n становился \r\n. Патчи с
+        # контекстными строками не применялись, а новые файлы попадали в
+        # коммит с CRLF. Опубликованный блоб — ровно то, что в диффе.
+        blob = subprocess.run(["git", "-C", str(self.tmp), "show", f"{sha}:Core/evolution_log.txt"],
+                              capture_output=True).stdout
+        self.assertEqual(blob, b"# cycle marker\n")
         # main НЕ сдвинут: merge_authority: human, BIBLE Принцип 13.
         self.assertEqual(_rev_parse(self.tmp, "main"), pre_main)
         self.assertTrue(res["human_action_required"])
@@ -366,6 +376,9 @@ class TestRatchetMeasuredOnTheCandidate(unittest.TestCase):
         _git(self.tmp, "init", "-q", "-b", "main")
         _git(self.tmp, "config", "user.email", "fixture@why-ai.test")
         _git(self.tmp, "config", "user.name", "CommitGate Fixture")
+        # Как в настоящем репозитории (WorkspaceOrchestrator.harden_git_invariants):
+        # без этого глобальный autocrlf=true на Windows маскирует порчу патча.
+        _git(self.tmp, "config", "core.autocrlf", "false")
         (self.tmp / "tests").mkdir()
         (self.tmp / "tests" / "__init__.py").write_text("", encoding="utf-8")
         (self.tmp / "tests" / "test_smoke.py").write_text(
@@ -408,8 +421,9 @@ class TestRatchetMeasuredOnTheCandidate(unittest.TestCase):
         self.assertEqual(res["status"], "SIZE_RATCHET_VIOLATION", res)
         self.assertFalse(res["merged"])
         self.assertEqual(res["ratchet_result"]["violations"][0]["path"], "Core/notes.txt")
-        # 201 байт с LF; 202 — если git в песочнице переписал окончание в CRLF.
-        self.assertGreaterEqual(res["ratchet_result"]["violations"][0]["current_size"], 201)
+        # Ровно 201 байт: 200 символов и LF. Раньше здесь выходило 202 — дифф
+        # уходил в git apply через текстовый stdin, и Windows дописывал CR.
+        self.assertEqual(res["ratchet_result"]["violations"][0]["current_size"], 201)
         self.assertNotEqual(
             _git(self.tmp, "rev-parse", "--verify", "--quiet", "self-evo/cycle-bloat").returncode, 0,
             "раздутый кандидат не должен быть опубликован")
@@ -418,6 +432,11 @@ class TestRatchetMeasuredOnTheCandidate(unittest.TestCase):
     def test_candidate_within_the_ceiling_is_published(self):
         res = self._run(self._rewrite_notes("short"), "self-evo/cycle-small")
         self.assertEqual(res["status"], "CANDIDATE_VERIFIED_AND_PUBLISHED", res)
+        # Изменённый LF-файл обязан остаться LF: раньше текстовый stdin на
+        # Windows превращал «+short\n» в «+short\r\n», и CR уходил в коммит.
+        blob = subprocess.run(["git", "-C", str(self.tmp), "show", f"{res['commit_sha']}:Core/notes.txt"],
+                              capture_output=True).stdout
+        self.assertEqual(blob, b"short\n")
 
     def test_candidate_cannot_raise_its_own_limit_in_the_sandbox_copy(self):
         """Лимиты читаются из реестра рабочей области, а не из песочницы."""
@@ -452,6 +471,9 @@ class TestSandboxRunsWithoutOperatorSecrets(unittest.TestCase):
         _git(self.tmp, "init", "-q", "-b", "main")
         _git(self.tmp, "config", "user.email", "fixture@why-ai.test")
         _git(self.tmp, "config", "user.name", "CommitGate Fixture")
+        # Как в настоящем репозитории (WorkspaceOrchestrator.harden_git_invariants):
+        # без этого глобальный autocrlf=true на Windows маскирует порчу патча.
+        _git(self.tmp, "config", "core.autocrlf", "false")
         (self.tmp / "tests").mkdir()
         (self.tmp / "tests" / "__init__.py").write_text("", encoding="utf-8")
         (self.tmp / ".size_ratchets.json").write_text(

@@ -25,7 +25,7 @@
     "Eye/TelemetryDock.tsx": 10597,
     "Supervisor/classify_diff.py": 18995,
     "Supervisor/CommitGate.py": 21492,
-    "Supervisor/EvolutionDaemon.py": 30147,
+    "Supervisor/EvolutionDaemon.py": 31852,
     "Supervisor/guard-policy-plane.sh": 2245,
     "Supervisor/launcher.py": 10173,
     "Supervisor/miniyaml.py": 8376,
@@ -38,7 +38,7 @@
     "tests/test_commit_gate.py": 27224,
     "tests/test_context_fit.py": 1237,
     "tests/test_daemon_server.py": 23267,
-    "tests/test_evolution_daemon.py": 21219,
+    "tests/test_evolution_daemon.py": 23636,
     "tests/test_launcher.py": 956,
     "tests/test_mcp_server.py": 1741,
     "tests/test_meta_over_patch.py": 6153,
@@ -341,6 +341,20 @@
       "new_limit": 21219,
       "reason": "2026-11-17: класс TestCycleEditsAnExistingFile — регрессия R-5e на уровне цикла (правка существующего LF-файла, побайтовая сверка блоба).",
       "at": "2026-11-17T20:48:06.015355+00:00"
+    },
+    {
+      "path": "Supervisor/EvolutionDaemon.py",
+      "old_limit": 30147,
+      "new_limit": 31852,
+      "reason": "2026-11-17 R-5f: status_report() — измеренная диагностика вместо литералов --status, с готовностью предложителя (без значения ключа).",
+      "at": "2026-11-17T20:52:12.467253+00:00"
+    },
+    {
+      "path": "tests/test_evolution_daemon.py",
+      "old_limit": 21219,
+      "new_limit": 23636,
+      "reason": "2026-11-17 R-5f: status_report() — измеренная диагностика вместо литералов --status, с готовностью предложителя (без значения ключа).",
+      "at": "2026-11-17T20:52:12.870874+00:00"
     }
   ]
 }

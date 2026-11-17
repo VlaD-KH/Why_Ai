@@ -7,6 +7,7 @@
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -31,18 +32,60 @@ sys.path.insert(0, str(ROOT_DIR / "Core"))
 
 try:
     from launcher import SupervisorLauncher
-    from server import run_daemon_server
+    from server import count_bible_principles, run_daemon_server
 except ImportError:
     from Supervisor.launcher import SupervisorLauncher  # type: ignore
-    from Core.server import run_daemon_server  # type: ignore
+    from Core.server import count_bible_principles, run_daemon_server  # type: ignore
+
+
+def count_principles() -> str:
+    """Число принципов BIBLE.md, посчитанное по заголовкам, а не литерал.
+
+    Баннер печатал «15 Principles» строкой — так же, как сервер когда-то
+    печатал «13/13», когда принципов стало 15. Источник счёта тот же, что у
+    /api/status (Core/server.py: count_bible_principles), чтобы два места не
+    могли разойтись.
+    """
+    reported = count_bible_principles()  # "15/15 BIBLE.md" или текст ошибки
+    head = reported.split("/", 1)[0]
+    return head if head.isdigit() else reported
+
+
+def banner_lines() -> list:
+    return [
+        "=" * 76,
+        "   [SELF-EVO] HYBRID SOVEREIGN ORCHESTRATOR - MVP CORE (v3.0.0)",
+        "   Architecture: Ouroboros / Hierarchy v3 / Claudexor Quorum Review",
+        f"   Constitutional Invariants: {count_principles()} Principles (BIBLE.md) - Zone P/R Floor",
+        "=" * 76,
+    ]
 
 
 def print_banner() -> None:
-    print("=" * 76)
-    print("   [SELF-EVO] HYBRID SOVEREIGN ORCHESTRATOR - MVP CORE (v3.0.0)")
-    print("   Architecture: Ouroboros / Hierarchy v3 / Claudexor Quorum Review")
-    print("   Constitutional Invariants: 15 Principles (BIBLE.md) - Zone P/R Floor")
-    print("=" * 76)
+    for line in banner_lines():
+        print(line)
+
+
+def summarize_test_run(unittest_stderr: str) -> str:
+    """Итог прогона unittest по его собственному выводу.
+
+    Раньше: `test_count = m.group(1) if m else "32"` и печать «{n}/32». Знаменатель
+    32 был литералом времён, когда тестов было 32, а при нераспознанном выводе
+    число 32 подставлялось и в числитель — гейт называл число, которого никто
+    не измерял. Теперь печатается только измеренное: число из строки
+    «Ran N tests» и итоговая строка unittest как есть («OK», «OK (expected
+    failures=1)»), а нераспознанное так и называется.
+    """
+    ran = re.search(r"^Ran (\d+) tests?\b", unittest_stderr, re.MULTILINE)
+    status = None
+    for line in reversed(unittest_stderr.splitlines()):
+        stripped = line.strip()
+        if stripped.startswith(("OK", "FAILED")):
+            status = stripped
+            break
+    if not ran:
+        return "число тестов не распознано в выводе unittest"
+    return f"{ran.group(1)} тестов, итог unittest: {status or 'не распознан'}"
 
 
 def run_integrity_self_check() -> bool:
@@ -66,10 +109,7 @@ def run_integrity_self_check() -> bool:
         print(f"[!] ОШИБКА ТЕСТОВ:\n{res.stderr}", file=sys.stderr)
         return False
 
-    import re
-    m = re.search(r"Ran (\d+) tests", res.stderr)
-    test_count = m.group(1) if m else "32"
-    print(f"  [+] 100% Доказательных тестов пройдено ({test_count}/32 тестов OK).")
+    print(f"  [+] Доказательные тесты пройдены: {summarize_test_run(res.stderr)}.")
     return True
 
 

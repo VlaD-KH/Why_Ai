@@ -62,6 +62,38 @@ class TestWhyAiConfig(unittest.TestCase):
         self.assertIn("class_2_architect", class_ids)
         self.assertIn("class_3_arbitrator", class_ids)
 
+    def test_proposer_block_is_consumable_by_llm_connector(self):
+        """Параметры предложителя (R-3) живут в конфиге, а не только в
+        константах llm_connector.py, и подходят к конструктору коннектора."""
+        import re
+
+        sys.path.insert(0, str(ROOT_DIR / "Tool" / "connectors"))
+        from llm_connector import LLMConnector
+
+        data = parse_yaml(self.config_path.read_text(encoding="utf-8"))
+        proposer = data.get("llm_orchestration", {}).get("proposer")
+        self.assertIsInstance(proposer, dict, "llm_orchestration.proposer должен существовать")
+
+        # Принцип 14: в конфиге — ИМЯ переменной окружения, не значение ключа.
+        env_name = proposer.get("api_key_env")
+        self.assertRegex(env_name or "", r"^[A-Z_][A-Z0-9_]*$")
+        self.assertFalse(re.search(r"sk-|key-", str(proposer)), "в конфиге не должно быть значения ключа")
+
+        self.assertIsInstance(proposer.get("model"), str)
+        self.assertIsInstance(proposer.get("max_tokens"), int)
+        self.assertIsInstance(proposer.get("timeout_seconds"), (int, float))
+
+        connector = LLMConnector(
+            api_key_env=env_name,
+            model=proposer["model"],
+            max_tokens=proposer["max_tokens"],
+            effort=proposer["effort"],
+            timeout=proposer["timeout_seconds"],
+            max_retries=proposer["max_retries"],
+        )
+        self.assertEqual(connector.model, proposer["model"])
+        self.assertEqual(connector.max_tokens, proposer["max_tokens"])
+
 
 if __name__ == "__main__":
     unittest.main()

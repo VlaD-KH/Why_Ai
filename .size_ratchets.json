@@ -24,21 +24,21 @@
     "Eye/Dashboard.tsx": 29988,
     "Eye/TelemetryDock.tsx": 10597,
     "Supervisor/classify_diff.py": 18995,
-    "Supervisor/CommitGate.py": 18457,
-    "Supervisor/EvolutionDaemon.py": 25572,
+    "Supervisor/CommitGate.py": 19518,
+    "Supervisor/EvolutionDaemon.py": 29815,
     "Supervisor/guard-policy-plane.sh": 2245,
     "Supervisor/launcher.py": 10173,
     "Supervisor/miniyaml.py": 8376,
     "Supervisor/QuorumReviewer.py": 10898,
-    "Supervisor/SizeRatchets.py": 11817,
+    "Supervisor/SizeRatchets.py": 13257,
     "Supervisor/WorkspaceOrchestrator.py": 9559,
     "Supervisor/WorktreeSandbox.py": 7152,
     "Supervisor/Constitution/BIBLE.md": 7888,
     "tests/test_classify_diff.py": 2067,
-    "tests/test_commit_gate.py": 17054,
+    "tests/test_commit_gate.py": 22263,
     "tests/test_context_fit.py": 1237,
     "tests/test_daemon_server.py": 23267,
-    "tests/test_evolution_daemon.py": 11544,
+    "tests/test_evolution_daemon.py": 17745,
     "tests/test_launcher.py": 956,
     "tests/test_mcp_server.py": 1741,
     "tests/test_meta_over_patch.py": 6153,
@@ -257,6 +257,41 @@
       "new_limit": 3329,
       "reason": "20260825-154544 R-4 (коммиты 72d4413/86397a1): замыкание конвейера самоэволюции реальными git-операциями (R-4b) — регрессионный тест на регистронезависимость вето Zone P/R (4 формы записи пути). Рост 1881->3329 Б.",
       "at": "2026-08-25T16:16:35.668545+00:00"
+    },
+    {
+      "path": "Supervisor/EvolutionDaemon.py",
+      "old_limit": 25572,
+      "new_limit": 29815,
+      "reason": "2026-11-17 R-5c (коммит 5aa545c): литеральный кандидат заменён синтезом предложителем — инъекция proposer, _build_default_proposer() из why_ai_config.yaml, validate_binding до вызова модели, гейт путей AutonomyGate до песочницы, артефакт промпта/ответа и событие note в ledger. Основная логика вынесена в новые модули ProposalSynthesizer.py и AutonomyGate.py, чтобы демон рос минимально. Файл был ровно на потолке до правки.",
+      "at": "2026-11-17T20:21:09.565918+00:00"
+    },
+    {
+      "path": "Supervisor/CommitGate.py",
+      "old_limit": 18457,
+      "new_limit": 19518,
+      "reason": "2026-11-17 R-5b (коммит 3276fac): проверка храповиков по кандидату в песочнице после apply и до прогона тестов (SIZE_RATCHET_VIOLATION). Рост в пределах потолка; ребейзлайн — чтобы зафиксировать новую базу осознанно, а не оставлять скрытый запас.",
+      "at": "2026-11-17T20:21:09.922862+00:00"
+    },
+    {
+      "path": "Supervisor/SizeRatchets.py",
+      "old_limit": 11817,
+      "new_limit": 13257,
+      "reason": "2026-11-17 R-5b (коммит 3276fac): check_paths(measure_root=…) — размеры из песочницы с кандидатом, лимиты из реестра рабочей области, только чтение. Рост в пределах потолка.",
+      "at": "2026-11-17T20:21:10.260529+00:00"
+    },
+    {
+      "path": "tests/test_evolution_daemon.py",
+      "old_limit": 11544,
+      "new_limit": 17745,
+      "reason": "2026-11-17 R-5c (коммит 5aa545c): подделка предложителя для сквозных тестов, класс TestProposerWiring (4 теста: без предложителя ничего не публикуется; модель не вызывается без привязки к сбоям; кандидат с путём policy-плоскости не доходит до песочницы; предложитель строится из блока конфига) и тест артефакта промпта/ответа.",
+      "at": "2026-11-17T20:21:10.594040+00:00"
+    },
+    {
+      "path": "tests/test_commit_gate.py",
+      "old_limit": 17054,
+      "new_limit": 22263,
+      "reason": "2026-11-17 R-5b (коммит 3276fac): класс TestRatchetMeasuredOnTheCandidate (3 теста: раздувание кандидата проходит старый префлайт, но не публикуется; рост в пределах потолка публикуется; кандидат не поднимает себе лимит в копии реестра).",
+      "at": "2026-11-17T20:21:10.931498+00:00"
     }
   ]
 }
